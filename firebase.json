@@ -1,6 +1,1 @@
-{
-  "firestore": {
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
-  }
-}
+{"firestore":{"rules":"firestore.rules","indexes":"firestore.indexes.json"},"flutter":{"platforms":{"android":{"default":{"projectId":"reptigram-lite","appId":"1:1023144692222:android:a57f919ff17d0f9d3018af","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"reptigram-lite","configurations":{"android":"1:1023144692222:android:a57f919ff17d0f9d3018af","ios":"1:1023144692222:ios:c62d368a4f5f4b813018af","macos":"1:1023144692222:ios:c62d368a4f5f4b813018af","web":"1:1023144692222:web:2f91f75b0086b9403018af","windows":"1:1023144692222:web:ec37f6cb1bdda0893018af"}}}}}}
