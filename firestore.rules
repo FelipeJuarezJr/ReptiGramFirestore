@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // User profile access
+    match /users/{userId}/profile/{document=**} {
+      allow read: if true;  // Public profiles
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Reptiles access
+    match /users/{userId}/reptiles/{reptileId} {
+      allow read: if true;  // Public reptile info
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Media access
+    match /users/{userId}/media/{mediaId} {
+      allow read: if true;  // Public media
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null && request.auth.uid == userId;
+      
+      // Comments on media
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if request.auth != null;
+        allow update, delete: if request.auth != null && 
+          (request.auth.uid == userId || request.auth.uid == resource.data.userId);
+      }
+    }
+    
+    // Pairings access
+    match /users/{userId}/pairings/{pairingId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Species (global collection)
+    match /species/{speciesId} {
+      allow read: if true;
+      allow write: if false;  // Only admins can modify species (manage through Firebase Console)
+    }
+  }
+}
