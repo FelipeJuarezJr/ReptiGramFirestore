@@ -1,40 +1,80 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'register_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../styles/colors.dart';
 
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+class RegisterScreen extends StatefulWidget {
+  const RegisterScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<RegisterScreen> createState() => _RegisterScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
+  final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   bool _isLoading = false;
 
-  Future<void> _handleLogin() async {
+  Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
+    
+    if (_passwordController.text != _confirmPasswordController.text) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Passwords do not match')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
 
     try {
-      setState(() => _isLoading = true);
+      // Check if username already exists
+      final usernameDoc = await FirebaseFirestore.instance
+          .collection('usernames')
+          .doc(_usernameController.text.trim())
+          .get();
 
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
+      if (usernameDoc.exists) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Username already taken')),
+          );
+        }
+        return;
+      }
+
+      final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
 
+      final String uid = userCredential.user!.uid;
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
+        'username': _usernameController.text.trim(),
+        'email': _emailController.text.trim(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      await FirebaseFirestore.instance
+          .collection('usernames')
+          .doc(_usernameController.text.trim())
+          .set({
+        'uid': uid,
+      });
+
       if (mounted) {
-        // Navigate to home screen after successful login
-        Navigator.pushReplacementNamed(context, '/home');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Registration successful!')),
+        );
+        Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Login failed')),
+          SnackBar(content: Text('Registration failed: ${e.toString()}')),
         );
       }
     } finally {
@@ -86,6 +126,23 @@ class _LoginScreenState extends State<LoginScreen> {
                   Container(
                     decoration: AppColors.inputDecoration,
                     child: TextFormField(
+                      controller: _usernameController,
+                      decoration: const InputDecoration(
+                        hintText: 'Username',
+                        hintStyle: TextStyle(color: Colors.brown),
+                      ).applyDefaults(AppColors.inputDecorationTheme),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Username is required';
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    decoration: AppColors.inputDecoration,
+                    child: TextFormField(
                       controller: _emailController,
                       decoration: const InputDecoration(
                         hintText: 'Email',
@@ -93,7 +150,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ).applyDefaults(AppColors.inputDecorationTheme),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return 'Please enter your email';
+                          return 'Email is required';
                         }
                         return null;
                       },
@@ -111,7 +168,25 @@ class _LoginScreenState extends State<LoginScreen> {
                       obscureText: true,
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return 'Please enter your password';
+                          return 'Password is required';
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    decoration: AppColors.inputDecoration,
+                    child: TextFormField(
+                      controller: _confirmPasswordController,
+                      decoration: const InputDecoration(
+                        hintText: 'Confirm Password',
+                        hintStyle: TextStyle(color: Colors.brown),
+                      ).applyDefaults(AppColors.inputDecorationTheme),
+                      obscureText: true,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please confirm your password';
                         }
                         return null;
                       },
@@ -124,12 +199,12 @@ class _LoginScreenState extends State<LoginScreen> {
                           width: MediaQuery.of(context).size.width * 0.5,
                           decoration: AppColors.loginButtonDecoration,
                           child: ElevatedButton(
-                            onPressed: _handleLogin,
+                            onPressed: _register,
                             style: AppColors.pillButtonStyle,
                             child: Padding(
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               child: Text(
-                                'Login',
+                                'Register',
                                 style: TextStyle(
                                   color: AppColors.buttonText,
                                   fontSize: 16,
@@ -139,16 +214,10 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                         ),
-                  const SizedBox(height: 16),
                   TextButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const RegisterScreen()),
-                      );
-                    },
+                    onPressed: () => Navigator.pop(context),
                     child: Text(
-                      'Don\'t have an account? Register',
+                      'Already have an account? Login',
                       style: TextStyle(
                         color: AppColors.titleText,
                       ),
@@ -166,7 +235,9 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void dispose() {
     _emailController.dispose();
+    _usernameController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
-}
+} 
