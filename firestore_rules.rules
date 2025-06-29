@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default: deny all access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      // Allow read if user is authenticated
+      allow read: if request.auth != null;
+      // Allow write if user is authenticated and writing to their own document
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Usernames collection
+    match /usernames/{username} {
+      // Allow public read access
+      allow read: if true;
+      // Allow write if user is authenticated
+      allow write: if request.auth != null;
+      // Validate that the value is a string
+      allow create, update: if request.auth != null && 
+        request.resource.data is string;
+    }
+    
+    // Posts collection
+    match /posts/{postId} {
+      // Allow public read access
+      allow read: if true;
+      // Allow write if user is authenticated
+      allow write: if request.auth != null;
+      
+      // Comments subcollection
+      match /comments/{commentId} {
+        // Allow public read access
+        allow read: if true;
+        // Allow write if user is authenticated
+        allow write: if request.auth != null;
+      }
+      
+      // Likes subcollection
+      match /likes/{likeId} {
+        // Allow public read access
+        allow read: if true;
+        // Allow write if user is authenticated
+        allow write: if request.auth != null;
+      }
+    }
+  }
+} 

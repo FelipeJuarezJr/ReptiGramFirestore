@@ -1,0 +1,24 @@
+{
+  "name": "reptigram-migration",
+  "version": "1.0.0",
+  "description": "Migration script to transfer data from Firebase Realtime Database to Firestore",
+  "main": "migration_script.js",
+  "scripts": {
+    "migrate": "node migration_script.js",
+    "migrate-storage": "node storage_migration.js",
+    "test-storage": "node test_storage.js",
+    "validate": "node validate_migration.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  },
+  "keywords": [
+    "firebase",
+    "firestore",
+    "migration",
+    "realtime-database"
+  ],
+  "author": "ReptiGram Team",
+  "license": "MIT"
+} 
