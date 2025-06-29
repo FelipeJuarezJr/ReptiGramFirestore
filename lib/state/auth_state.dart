@@ -1,13 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
 import '../models/user_model.dart';
 import '../models/auth_response_model.dart';
 import '../utils/error_utils.dart';
+import '../services/firestore_service.dart';
 
 class AuthState extends ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final DatabaseReference _database = FirebaseDatabase.instance.ref();
   
   UserModel? _currentUser;
   bool _isLoading = false;
@@ -28,7 +27,7 @@ class AuthState extends ChangeNotifier {
     // Listen to auth state changes
     _auth.authStateChanges().listen((User? user) async {
       if (user != null) {
-        // Load user data from database
+        // Load user data from Firestore
         await _loadUserData(user.uid);
       } else {
         _currentUser = null;
@@ -39,10 +38,9 @@ class AuthState extends ChangeNotifier {
 
   Future<void> _loadUserData(String uid) async {
     try {
-      final snapshot = await _database.child('users').child(uid).get();
-      if (snapshot.exists) {
-        final userData = Map<String, dynamic>.from(snapshot.value as Map);
-        _currentUser = UserModel.fromJson({...userData, 'uid': uid});
+      final user = await FirestoreService.getUser(uid);
+      if (user != null) {
+        _currentUser = user;
         notifyListeners();
       }
     } catch (e) {
@@ -63,10 +61,7 @@ class AuthState extends ChangeNotifier {
 
       if (credential.user != null) {
         // Update last login
-        await _database
-            .child('users')
-            .child(credential.user!.uid)
-            .update({'lastLogin': ServerValue.timestamp});
+        await FirestoreService.updateLastLogin(credential.user!.uid);
 
         await _loadUserData(credential.user!.uid);
         return AuthResponse.success(_currentUser!);
@@ -89,12 +84,8 @@ class AuthState extends ChangeNotifier {
       _clearError();
 
       // Check if username is available
-      final usernameSnapshot = await _database
-          .child('usernames')
-          .child(username.toLowerCase())
-          .get();
-
-      if (usernameSnapshot.exists) {
+      final isAvailable = await FirestoreService.isUsernameAvailable(username);
+      if (!isAvailable) {
         throw Exception('Username already taken');
       }
 
@@ -114,17 +105,8 @@ class AuthState extends ChangeNotifier {
           lastLogin: DateTime.now(),
         );
 
-        // Save user data
-        await _database
-            .child('users')
-            .child(credential.user!.uid)
-            .set(userData.toJson());
-
-        // Reserve username
-        await _database
-            .child('usernames')
-            .child(username.toLowerCase())
-            .set(credential.user!.uid);
+        // Save user data and reserve username using batch operation
+        await FirestoreService.batchCreateUserAndReserveUsername(userData);
 
         _currentUser = userData;
         notifyListeners();
@@ -157,11 +139,7 @@ class AuthState extends ChangeNotifier {
     try {
       if (_currentUser == null) return;
 
-      await _database
-          .child('users')
-          .child(_currentUser!.uid)
-          .update(updates);
-
+      await FirestoreService.updateUser(_currentUser!.uid, updates);
       await _loadUserData(_currentUser!.uid);
     } catch (e) {
       _setError(ErrorUtils.getAuthErrorMessage(e));

@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 class AppColors {
   static const Color titleText = Color(0xFF333333);
   static const Color buttonText = Colors.white;

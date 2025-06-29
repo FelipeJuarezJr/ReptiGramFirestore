@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../styles/colors.dart';
 import '../common/header.dart';
 import '../common/title_header.dart';
 import '../models/photo_data.dart';
 import '../state/app_state.dart';
+import '../services/firestore_service.dart';
 
 class FeedScreen extends StatefulWidget {
   final bool showLikedOnly;
@@ -55,56 +56,53 @@ class _FeedScreenState extends State<FeedScreen> {
       final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
       print('Current user: ${currentUser?.uid}');
       
-      // Get all photos from users
-      final usersSnapshot = await FirebaseDatabase.instance
-          .ref()
-          .child('users')
-          .get();
-
-      // Get all likes in one call
-      final likesSnapshot = await FirebaseDatabase.instance
-          .ref()
-          .child('posts')
-          .get();
-
-      if (!usersSnapshot.exists) return;
+      // Firestore: Get all photos
+      final photosQuery = await FirestoreService.photos.get();
+      
+      // Firestore: Get all likes
+      final likesQuery = await FirestoreService.likes.get();
 
       final List<PhotoData> allPhotos = [];
-      final usersData = usersSnapshot.value as Map<dynamic, dynamic>;
       
-      // Convert likes snapshot to Map for faster lookups
-      final likesData = (likesSnapshot.value as Map<dynamic, dynamic>?) ?? {};
-
-      for (var entry in usersData.entries) {
-        final userId = entry.key as String;
-        final userData = entry.value as Map<dynamic, dynamic>;
-
-        if (userData['photos'] != null) {
-          final photos = userData['photos'] as Map<dynamic, dynamic>;
-          photos.forEach((photoId, photoData) {
-            final photoLikes = (likesData[photoId]?['likes'] as Map<dynamic, dynamic>?) ?? {};
-            final isLiked = currentUser != null && photoLikes[currentUser.uid] == true;
-
-            // Make sure we get the correct timestamp
-            final timestamp = photoData['timestamp'] is int 
-                ? photoData['timestamp'] as int
-                : (photoData['timestamp'] as Map<dynamic, dynamic>?)?.values.first as int? 
-                ?? DateTime.now().millisecondsSinceEpoch;
-
-            final photo = PhotoData(
-              id: photoId.toString(),
-              file: null,
-              firebaseUrl: photoData['firebaseUrl'] ?? photoData['url'],
-              title: photoData['title'] ?? 'Untitled',
-              comment: photoData['comment'] ?? '',
-              isLiked: isLiked,
-              userId: userId,
-              timestamp: timestamp,
-              likesCount: photoLikes.length,
-            );
-            allPhotos.add(photo);
-          });
+      // Convert likes to Map for faster lookups
+      final likesMap = <String, Map<String, bool>>{};
+      for (var doc in likesQuery.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final photoId = data['photoId'] as String?;
+        final userId = data['userId'] as String?;
+        if (photoId != null && userId != null) {
+          likesMap[photoId] ??= {};
+          likesMap[photoId]![userId] = true;
         }
+      }
+
+      for (var doc in photosQuery.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final photoId = doc.id;
+        final userId = data['userId'] as String?;
+        
+        if (userId == null) continue;
+        
+        final photoLikes = likesMap[photoId] ?? {};
+        final isLiked = currentUser != null && photoLikes[currentUser.uid] == true;
+
+        // Handle timestamp
+        final timestamp = data['timestamp'] is Timestamp 
+            ? (data['timestamp'] as Timestamp).millisecondsSinceEpoch
+            : data['timestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch;
+
+        final photo = PhotoData(
+          id: photoId,
+          file: null,
+          firebaseUrl: data['url'] ?? data['firebaseUrl'],
+          title: data['title'] ?? 'Untitled',
+          comment: data['comment'] ?? '',
+          isLiked: isLiked,
+          userId: userId,
+          timestamp: timestamp,
+          likesCount: photoLikes.length,
+        );
+        allPhotos.add(photo);
       }
 
       // Sort by timestamp (newest first)
@@ -276,18 +274,23 @@ class _FeedScreenState extends State<FeedScreen> {
         photo.likesCount += photo.isLiked ? 1 : -1;
       });
 
-      // Use the same path structure as post_screen.dart
-      final likesRef = FirebaseDatabase.instance
-          .ref()
-          .child('posts')  // Changed from 'users'
-          .child(photo.id)  // Use photo.id directly
-          .child('likes')
-          .child(currentUser.uid);
-
+      // Firestore: Toggle like
       if (photo.isLiked) {
-        await likesRef.set(true);
+        await FirestoreService.likes.add({
+          'photoId': photo.id,
+          'userId': currentUser.uid,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
       } else {
-        await likesRef.remove();
+        // Find and delete the like document
+        final likeQuery = await FirestoreService.likes
+            .where('photoId', isEqualTo: photo.id)
+            .where('userId', isEqualTo: currentUser.uid)
+            .get();
+        
+        for (var doc in likeQuery.docs) {
+          await doc.reference.delete();
+        }
       }
 
     } catch (e) {
@@ -402,16 +405,12 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
     if (content.trim().isEmpty) return;
 
     try {
-      final commentsRef = FirebaseDatabase.instance
-          .ref()
-          .child('posts')
-          .child(widget.photo.id)
-          .child('comments');
-
-      await commentsRef.push().set({
+      // Firestore: Add comment
+      await FirestoreService.comments.add({
+        'photoId': widget.photo.id,
         'userId': currentUser.uid,
         'content': content.trim(),
-        'timestamp': ServerValue.timestamp,
+        'timestamp': FieldValue.serverTimestamp(),
       });
 
       _commentController.clear();
@@ -510,30 +509,27 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
             child: Column(
               children: [
                 Expanded(
-                  child: StreamBuilder<DatabaseEvent>(
-                    stream: FirebaseDatabase.instance
-                        .ref()
-                        .child('posts')
-                        .child(widget.photo.id)
-                        .child('comments')
-                        .orderByChild('timestamp')
-                        .limitToLast(100)
-                        .onValue,
+                  child: StreamBuilder<QuerySnapshot>(
+                    stream: FirestoreService.comments
+                        .where('photoId', isEqualTo: widget.photo.id)
+                        .orderBy('timestamp', descending: true)
+                        .limit(100)
+                        .snapshots(),
                     builder: (context, snapshot) {
-                      if (!snapshot.hasData || snapshot.data?.snapshot.value == null) {
+                      if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                         return const Center(child: Text('No comments yet'));
                       }
 
-                      final commentsData = snapshot.data!.snapshot.value as Map<dynamic, dynamic>;
-                      final commentsList = commentsData.entries.map((entry) {
-                        final comment = entry.value as Map<dynamic, dynamic>;
+                      final commentsList = snapshot.data!.docs.map((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
                         return {
-                          'userId': comment['userId'] as String,
-                          'content': comment['content'] as String,
-                          'timestamp': comment['timestamp'] as int,
+                          'userId': data['userId'] as String,
+                          'content': data['content'] as String,
+                          'timestamp': data['timestamp'] is Timestamp 
+                              ? (data['timestamp'] as Timestamp).millisecondsSinceEpoch
+                              : data['timestamp'] as int,
                         };
-                      }).toList()
-                        ..sort((a, b) => (b['timestamp'] as int).compareTo(a['timestamp'] as int));
+                      }).toList();
 
                       return ListView.builder(
                         controller: _scrollController,

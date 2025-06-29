@@ -4,7 +4,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'screens/login_screen.dart';
 import 'state/app_state.dart';
 import 'state/auth_state.dart';
-import 'dart:html' as html;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,8 +20,6 @@ Future<void> main() async {
       databaseURL: "https://reptigram-lite-default-rtdb.firebaseio.com"
     ),
   );
-
-  html.document.title = 'ReptiGram - A Social Network for Reptile Enthusiasts';
 
   runApp(const MyApp());
 }

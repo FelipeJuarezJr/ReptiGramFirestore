@@ -8,11 +8,12 @@ import '../common/title_header.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:path/path.dart' as path;
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import '../models/photo_data.dart';
 import '../utils/photo_utils.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/firestore_service.dart';
 
 class PhotosOnlyScreen extends StatefulWidget {
   final String notebookName;
@@ -53,38 +54,33 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) return;
 
-      final snapshot = await FirebaseDatabase.instance
-          .ref()
-          .child('users')
-          .child(currentUser.uid)
-          .child('photos')
+      // Firestore: Get photos for this specific notebook
+      final photosQuery = await FirestoreService.photos
+          .where('userId', isEqualTo: currentUser.uid)
+          .where('source', isEqualTo: 'notebooks')
+          .where('notebookName', isEqualTo: widget.notebookName)
+          .where('binderName', isEqualTo: widget.parentBinderName)
+          .where('albumName', isEqualTo: widget.parentAlbumName)
           .get();
 
-      if (snapshot.exists && snapshot.value != null) {
-        final data = snapshot.value as Map<dynamic, dynamic>;
-        final List<PhotoData> photos = [];
+      final List<PhotoData> photos = [];
 
-        data.forEach((key, value) {
-          if (value['source'] == 'notebooks' && 
-              value['notebookName'] == widget.notebookName &&
-              value['binderName'] == widget.parentBinderName &&
-              value['albumName'] == widget.parentAlbumName) {
-            final photo = PhotoData(
-              id: key,
-              file: null,
-              firebaseUrl: value['url'],
-              title: value['title'] ?? 'Photo Details',
-              comment: value['comment'] ?? '',
-              userId: currentUser.uid,
-              isLiked: false,
-              likesCount: 0,
-            );
-            photos.add(photo);
-          }
-        });
-
-        appState.setPhotos(photos);
+      for (var doc in photosQuery.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final photo = PhotoData(
+          id: doc.id,
+          file: null,
+          firebaseUrl: data['url'],
+          title: data['title'] ?? 'Photo Details',
+          comment: data['comment'] ?? '',
+          userId: currentUser.uid,
+          isLiked: data['isLiked'] ?? false,
+          likesCount: 0,
+        );
+        photos.add(photo);
       }
+
+      appState.setPhotos(photos);
     } catch (e) {
       if (mounted) {
         appState.setError(e.toString());
@@ -150,24 +146,18 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
         userId: userId,
       );
 
-      // Save to Realtime Database with hierarchy info
-      final DatabaseReference photoRef = FirebaseDatabase.instance
-          .ref()
-          .child('users')
-          .child(userId)
-          .child('photos')
-          .child(photoId);
-
-      await photoRef.set({
+      // Firestore: Save photo with hierarchy info
+      await FirestoreService.photos.doc(photoId).set({
         'url': downloadURL,
         'title': newPhoto.title,
         'isLiked': newPhoto.isLiked,
         'comment': newPhoto.comment,
-        'timestamp': ServerValue.timestamp,
+        'timestamp': FieldValue.serverTimestamp(),
         'source': 'notebooks',
         'notebookName': widget.notebookName,
         'binderName': widget.parentBinderName,
         'albumName': widget.parentAlbumName,
+        'userId': userId,
       });
 
       // Update app state
@@ -766,21 +756,15 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
       print('Title: ${photo.title}');
       print('Comment: ${photo.comment}');
 
-      final DatabaseReference photoRef = FirebaseDatabase.instance
-          .ref()
-          .child('users')
-          .child(userId)
-          .child('photos')
-          .child(photo.id);
-
+      // Firestore: Update photo
       final updates = {
         'title': photo.title.trim(),
         'comment': photo.comment.trim(),
         'isLiked': photo.isLiked,
-        'lastModified': ServerValue.timestamp,
+        'lastModified': FieldValue.serverTimestamp(),
       };
 
-      await photoRef.update(updates);
+      await FirestoreService.photos.doc(photo.id).update(updates);
 
       // Update app state
       if (mounted) {

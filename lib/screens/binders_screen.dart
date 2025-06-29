@@ -4,7 +4,6 @@ import '../common/header.dart';
 import '../common/title_header.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import 'dart:io';
@@ -13,6 +12,8 @@ import '../models/photo_data.dart';
 import '../utils/photo_utils.dart';
 import '../screens/notebooks_screen.dart';
 import '../screens/albums_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/firestore_service.dart';
 
 class BindersScreen extends StatefulWidget {
   final String binderName;
@@ -44,19 +45,13 @@ class _BindersScreenState extends State<BindersScreen> {
         // Create default binder if none exists
         final currentUser = appState.currentUser;
         if (currentUser != null) {
-          final binderId = DateTime.now().millisecondsSinceEpoch.toString();
-          await FirebaseDatabase.instance
-              .ref()
-              .child('users')
-              .child(currentUser.uid)
-              .child('binders')
-              .child(binderId)
-              .set({
-                'name': 'My Binder',
-                'createdAt': ServerValue.timestamp,
-                'userId': currentUser.uid,
-                'albumName': widget.parentAlbumName,
-              });
+          // Firestore: Create default binder
+          await FirestoreService.binders.add({
+            'name': 'My Binder',
+            'createdAt': FieldValue.serverTimestamp(),
+            'userId': currentUser.uid,
+            'albumName': widget.parentAlbumName,
+          });
           setState(() {
             binders = ['My Binder'];
           });
@@ -71,25 +66,21 @@ class _BindersScreenState extends State<BindersScreen> {
       final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
       if (currentUser == null) return;
 
-      final snapshot = await FirebaseDatabase.instance
-          .ref()
-          .child('users')
-          .child(currentUser.uid)
-          .child('binders')
+      // Firestore: Get binders for user and album
+      final bindersQuery = await FirestoreService.binders
+          .where('userId', isEqualTo: currentUser.uid)
+          .where('albumName', isEqualTo: widget.parentAlbumName)
           .get();
 
-      if (snapshot.exists && snapshot.value != null) {
-        final data = snapshot.value as Map<dynamic, dynamic>;
-        setState(() {
-          binders = ['My Binder']; // Reset to default binder
-          data.forEach((key, value) {
-            if (value['name'] != null && 
-                value['albumName'] == widget.parentAlbumName) {
-              binders.add(value['name']);
-            }
-          });
-        });
-      }
+      setState(() {
+        binders = ['My Binder']; // Reset to default binder
+        for (var doc in bindersQuery.docs) {
+          final data = doc.data() as Map<String, dynamic>;
+          if (data['name'] != null) {
+            binders.add(data['name']);
+          }
+        }
+      });
     } catch (e) {
       print('Error loading binders: $e');
     }
@@ -101,42 +92,34 @@ class _BindersScreenState extends State<BindersScreen> {
       final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
       if (currentUser == null) return;
 
-      final snapshot = await FirebaseDatabase.instance
-          .ref()
-          .child('users')
-          .child(currentUser.uid)
-          .child('photos')
+      // Firestore: Get photos for this binder
+      final photosQuery = await FirestoreService.photos
+          .where('userId', isEqualTo: currentUser.uid)
+          .where('source', isEqualTo: 'binders')
+          .where('binderName', isEqualTo: widget.binderName)
+          .where('albumName', isEqualTo: widget.parentAlbumName)
           .get();
 
-      if (snapshot.exists && snapshot.value != null) {
-        final data = snapshot.value as Map<dynamic, dynamic>;
-        binderPhotos.clear();
+      binderPhotos.clear();
+      binderPhotos[widget.binderName] = [];
+
+      for (var doc in photosQuery.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final photo = PhotoData(
+          id: doc.id,
+          file: null,
+          firebaseUrl: data['url'],
+          title: data['title'] ?? 'Photo Details',
+          comment: data['comment'] ?? '',
+          userId: currentUser.uid,
+          isLiked: data['isLiked'] ?? false,
+          likesCount: 0,
+        );
         
-        // Initialize the current binder's photo list
-        binderPhotos[widget.binderName] = [];
-
-        // Sort photos into binders
-        data.forEach((key, value) {
-          if (value['source'] == 'binders' && 
-              value['binderName'] == widget.binderName &&
-              value['albumName'] == widget.parentAlbumName) {
-            final photo = PhotoData(
-              id: key,
-              file: null,
-              firebaseUrl: value['url'],
-              title: value['title'] ?? 'Photo Details',
-              comment: value['comment'] ?? '',
-              userId: currentUser.uid,
-              isLiked: false,
-              likesCount: 0,
-            );
-            
-            binderPhotos[widget.binderName]!.add(photo);
-          }
-        });
-
-        setState(() {});
+        binderPhotos[widget.binderName]!.add(photo);
       }
+
+      setState(() {});
     } catch (e) {
       print('Error loading binder photos: $e');
     } finally {
@@ -194,22 +177,13 @@ class _BindersScreenState extends State<BindersScreen> {
                       return;
                     }
 
-                    // Create a unique ID for the binder
-                    final binderId = DateTime.now().millisecondsSinceEpoch.toString();
-
-                    // Save to Firebase with hierarchy info
-                    await FirebaseDatabase.instance
-                        .ref()
-                        .child('users')
-                        .child(currentUser.uid)
-                        .child('binders')
-                        .child(binderId)
-                        .set({
-                          'name': newBinderName,
-                          'createdAt': ServerValue.timestamp,
-                          'userId': currentUser.uid,
-                          'albumName': widget.parentAlbumName,
-                        });
+                    // Firestore: Create binder
+                    await FirestoreService.binders.add({
+                      'name': newBinderName,
+                      'createdAt': FieldValue.serverTimestamp(),
+                      'userId': currentUser.uid,
+                      'albumName': widget.parentAlbumName,
+                    });
 
                     // Update local state
                     setState(() {
@@ -341,21 +315,15 @@ class _BindersScreenState extends State<BindersScreen> {
 
                                 final downloadUrl = await storageRef.getDownloadURL();
 
-                                // Save to Realtime Database with hierarchy info
-                                await FirebaseDatabase.instance
-                                    .ref()
-                                    .child('users')
-                                    .child(currentUser.uid)
-                                    .child('photos')
-                                    .child(photoId)
-                                    .set({
-                                      'url': downloadUrl,
-                                      'timestamp': ServerValue.timestamp,
-                                      'binderName': widget.binderName,
-                                      'albumName': widget.parentAlbumName,
-                                      'userId': currentUser.uid,
-                                      'source': 'binders',
-                                    });
+                                // Firestore: Save photo with hierarchy info
+                                await FirestoreService.photos.doc(photoId).set({
+                                  'url': downloadUrl,
+                                  'timestamp': FieldValue.serverTimestamp(),
+                                  'binderName': widget.binderName,
+                                  'albumName': widget.parentAlbumName,
+                                  'userId': currentUser.uid,
+                                  'source': 'binders',
+                                });
 
                                 Navigator.pop(context); // Hide loading indicator
                                 await _loadBinderPhotos(); // Reload photos
@@ -995,21 +963,15 @@ class _BindersScreenState extends State<BindersScreen> {
         throw Exception('Photo ID cannot be empty');
       }
 
-      final DatabaseReference photoRef = FirebaseDatabase.instance
-          .ref()
-          .child('users')
-          .child(currentUser.uid)
-          .child('photos')
-          .child(photo.id);
-
+      // Firestore: Update photo
       final updates = {
         'title': photo.title.trim(),
         'comment': photo.comment.trim(),
         'isLiked': photo.isLiked,
-        'lastModified': ServerValue.timestamp,
+        'lastModified': FieldValue.serverTimestamp(),
       };
 
-      await photoRef.update(updates);
+      await FirestoreService.photos.doc(photo.id).update(updates);
 
       if (mounted) {
         final appState = Provider.of<AppState>(context, listen: false);

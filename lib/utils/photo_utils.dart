@@ -1,18 +1,18 @@
-import 'package:firebase_database/firebase_database.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/photo_data.dart';
+import '../services/firestore_service.dart';
 
 class PhotoUtils {
-  static final DatabaseReference _dbRef = FirebaseDatabase.instance.ref();
   static final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // Convert database snapshot to PhotoData
-  static PhotoData? snapshotToPhotoData(DataSnapshot snapshot, String photoId) {
-    if (snapshot.value == null) return null;
+  // Convert Firestore document to PhotoData
+  static PhotoData? documentToPhotoData(DocumentSnapshot doc) {
+    if (!doc.exists) return null;
 
-    final Map<dynamic, dynamic> data = snapshot.value as Map;
+    final Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
     return PhotoData(
-      id: photoId,
+      id: doc.id,
       file: data['firebaseUrl'],
       firebaseUrl: data['firebaseUrl'],
       title: data['title'] ?? 'Photo Details',
@@ -22,22 +22,17 @@ class PhotoUtils {
     );
   }
 
-  // Save photo changes to database
+  // Save photo changes to Firestore
   static Future<void> savePhotoChanges(PhotoData photo) async {
     try {
       final userId = _auth.currentUser?.uid;
       if (userId == null) throw Exception('No user logged in');
 
-      await _dbRef
-          .child('users')
-          .child(userId)
-          .child('photos')
-          .child(photo.id)
-          .update({
+      await FirestoreService.updatePhoto(photo.id, {
         'title': photo.title,
         'isLiked': photo.isLiked,
         'comment': photo.comment,
-        'lastModified': ServerValue.timestamp,
+        'lastModified': FirestoreService.serverTimestamp,
       });
     } catch (e) {
       print('Error saving photo changes: $e');
@@ -51,34 +46,24 @@ class PhotoUtils {
       final userId = _auth.currentUser?.uid;
       if (userId == null) throw Exception('No user logged in');
 
-      // Load all photos first
-      final DataSnapshot snapshot = await _dbRef
-          .child('users')
-          .child(userId)
-          .child('photos')
+      // Load photos from Firestore with source filter
+      final QuerySnapshot snapshot = await FirestoreService.photos
+          .where('userId', isEqualTo: userId)
+          .where('source', isEqualTo: source)
           .get();
 
-      if (snapshot.value == null) return [];
-
-      final Map<dynamic, dynamic> photosMap = snapshot.value as Map;
-      final List<PhotoData> photos = [];
-
-      // Filter by source in memory
-      photosMap.forEach((key, value) {
-        if (value['source'] == source) {  // Filter locally
-          photos.add(PhotoData(
-            id: key,
-            file: null,
-            firebaseUrl: value['firebaseUrl'] ?? value['url'],
-            title: value['title'] ?? 'Photo Details',
-            isLiked: value['isLiked'] ?? false,
-            comment: value['comment'] ?? '',
-            userId: userId,
-          ));
-        }
-      });
-
-      return photos;
+      return snapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        return PhotoData(
+          id: doc.id,
+          file: null,
+          firebaseUrl: data['firebaseUrl'] ?? data['url'],
+          title: data['title'] ?? 'Photo Details',
+          isLiked: data['isLiked'] ?? false,
+          comment: data['comment'] ?? '',
+          userId: userId,
+        );
+      }).toList();
     } catch (e) {
       print('Error loading photos: $e');
       rethrow;
@@ -93,6 +78,13 @@ class PhotoUtils {
   // Format timestamp
   static String formatTimestamp(int timestamp) {
     final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')} '
+           '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  // Format Firestore timestamp
+  static String formatFirestoreTimestamp(Timestamp timestamp) {
+    final date = timestamp.toDate();
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')} '
            '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
   }

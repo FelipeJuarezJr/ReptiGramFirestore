@@ -1,19 +1,20 @@
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
-import '../models/photo_data.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_model.dart';
+import '../models/photo_data.dart';
+import '../services/firestore_service.dart';
 
 class AppState extends ChangeNotifier {
   User? _currentUser;
-  final Map<String, String> _usernames = {};
+  UserModel? _userModel;
+  Map<String, String> _usernames = {};
   List<PhotoData> _photos = [];
   bool _isLoading = false;
   String? _error;
-  UserModel? _userModel;
 
   // Getters
   User? get currentUser => _currentUser;
+  UserModel? get userModel => _userModel;
   Map<String, String> get usernames => _usernames;
   List<PhotoData> get photos => _photos;
   bool get isLoading => _isLoading;
@@ -50,17 +51,11 @@ class AppState extends ChangeNotifier {
     }
 
     try {
-      final snapshot = await FirebaseDatabase.instance
-          .ref()
-          .child('users')
-          .child(userId)
-          .child('username')
-          .get();
-
-      if (snapshot.exists && snapshot.value != null) {
-        _usernames[userId] = snapshot.value.toString();
+      final username = await FirestoreService.getUsernameById(userId);
+      if (username != null) {
+        _usernames[userId] = username;
         notifyListeners();
-        return _usernames[userId];
+        return username;
       }
       return 'Unknown User';
     } catch (e) {
@@ -124,15 +119,11 @@ class AppState extends ChangeNotifier {
       setLoading(true);
       setError(null);
 
-      // First test if we can write to the database at all
+      // First test if we can write to Firestore at all
       try {
-        await FirebaseDatabase.instance
-            .ref()
-            .child('temp_users')
-            .child('test')
-            .set({
-              'timestamp': ServerValue.timestamp,
-            });
+        await FirestoreService.users.doc('test').set({
+          'timestamp': FirestoreService.serverTimestamp,
+        });
         print('Test write successful');
       } catch (e) {
         print('Test write failed: $e');
@@ -155,26 +146,25 @@ class AppState extends ChangeNotifier {
         'uid': user.uid,
         'email': email,
         'username': username,
-        'createdAt': ServerValue.timestamp,
-        'lastLogin': ServerValue.timestamp,
+        'createdAt': FirestoreService.serverTimestamp,
+        'lastLogin': FirestoreService.serverTimestamp,
         'preferences': {},
       };
 
       // Try writing to temp location
-      await FirebaseDatabase.instance
-          .ref()
-          .child('temp_registrations')
-          .child(user.uid)
-          .set(userData);
+      await FirestoreService.users.doc('temp_${user.uid}').set(userData);
 
       print('Temp registration saved'); // Debug log
 
       // Now try writing to actual users path
-      await FirebaseDatabase.instance
-          .ref()
-          .child('users')
-          .child(user.uid)
-          .set(userData);
+      await FirestoreService.createUser(UserModel(
+        uid: user.uid,
+        email: email,
+        username: username,
+        createdAt: DateTime.now(),
+        lastLogin: DateTime.now(),
+        preferences: {},
+      ));
 
       print('User data saved'); // Debug log
 

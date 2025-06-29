@@ -3,10 +3,11 @@ import '../styles/colors.dart';
 import '../common/header.dart';
 import '../common/title_header.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
 import '../models/post_model.dart';
 import '../models/comment_model.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/firestore_service.dart';
 
 class PostScreen extends StatefulWidget {
   final bool shouldLoadPosts;
@@ -41,14 +42,12 @@ class _PostScreenState extends State<PostScreen> {
       final userId = FirebaseAuth.instance.currentUser?.uid;
       if (userId == null) return;
 
-      final postsRef = FirebaseDatabase.instance
-          .ref()
-          .child('posts')
-          .orderByChild('timestamp');
+      // Firestore: Get all posts ordered by timestamp
+      final postsQuery = await FirestoreService.posts
+          .orderBy('timestamp', descending: true)
+          .get();
 
-      final snapshot = await postsRef.get();
-
-      if (!snapshot.exists || snapshot.value == null) {
+      if (postsQuery.docs.isEmpty) {
         setState(() {
           _posts.clear();
           _isLoading = false;
@@ -57,37 +56,61 @@ class _PostScreenState extends State<PostScreen> {
       }
 
       try {
-        final data = snapshot.value as Map<dynamic, dynamic>;
         final List<PostModel> loadedPosts = [];
 
-        data.forEach((key, value) {
+        for (var doc in postsQuery.docs) {
           try {
-            Map<dynamic, dynamic> likesMap = {};
-            if (value['likes'] != null) {
-              likesMap = value['likes'] as Map<dynamic, dynamic>;
+            final data = doc.data() as Map<String, dynamic>;
+            final postId = doc.id;
+            
+            // Get likes for this post
+            final likesQuery = await FirestoreService.likes
+                .where('postId', isEqualTo: postId)
+                .get();
+            
+            final likesMap = <String, bool>{};
+            for (var likeDoc in likesQuery.docs) {
+              final likeData = likeDoc.data() as Map<String, dynamic>;
+              final likeUserId = likeData['userId'] as String?;
+              if (likeUserId != null) {
+                likesMap[likeUserId] = true;
+              }
             }
+            
             final isLiked = likesMap.containsKey(userId);
             final likeCount = likesMap.length;
 
-            // Parse comments
+            // Get comments for this post
+            final commentsQuery = await FirestoreService.comments
+                .where('postId', isEqualTo: postId)
+                .orderBy('timestamp', descending: true)
+                .get();
+            
             final List<CommentModel> comments = [];
-            if (value['comments'] != null) {
-              (value['comments'] as Map<dynamic, dynamic>).forEach((commentKey, commentValue) {
-                comments.add(CommentModel(
-                  id: commentKey,
-                  userId: commentValue['userId'] ?? '',
-                  content: commentValue['content'] ?? '',
-                  timestamp: DateTime.fromMillisecondsSinceEpoch(commentValue['timestamp'] ?? 0),
-                ));
-              });
+            for (var commentDoc in commentsQuery.docs) {
+              final commentData = commentDoc.data() as Map<String, dynamic>;
+              final timestamp = commentData['timestamp'] is Timestamp 
+                  ? (commentData['timestamp'] as Timestamp).toDate()
+                  : DateTime.fromMillisecondsSinceEpoch(commentData['timestamp'] ?? 0);
+              
+              comments.add(CommentModel(
+                id: commentDoc.id,
+                userId: commentData['userId'] ?? '',
+                content: commentData['content'] ?? '',
+                timestamp: timestamp,
+              ));
             }
 
             // Create post model with actual timestamp
+            final postTimestamp = data['timestamp'] is Timestamp 
+                ? (data['timestamp'] as Timestamp).toDate()
+                : DateTime.fromMillisecondsSinceEpoch(data['timestamp'] ?? 0);
+            
             final post = PostModel(
-              id: key,
-              userId: value['userId'] ?? '',
-              content: value['content'] ?? '',
-              timestamp: DateTime.fromMillisecondsSinceEpoch(value['timestamp'] ?? 0),
+              id: postId,
+              userId: data['userId'] ?? '',
+              content: data['content'] ?? '',
+              timestamp: postTimestamp,
               isLiked: isLiked,
               likeCount: likeCount,
               comments: comments,
@@ -100,10 +123,7 @@ class _PostScreenState extends State<PostScreen> {
           } catch (e) {
             print('Error processing individual post: $e');
           }
-        });
-
-        // Sort by timestamp (newest first)
-        loadedPosts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+        }
 
         setState(() {
           _posts.clear();
@@ -129,23 +149,13 @@ class _PostScreenState extends State<PostScreen> {
       if (userId == null) return;
 
       final content = _descriptionController.text.trim();
-      final postId = DateTime.now().millisecondsSinceEpoch.toString();
 
-      // Create post data
-      final postData = {
+      // Firestore: Create post
+      await FirestoreService.posts.add({
         'userId': userId,
         'content': content,
-        'timestamp': ServerValue.timestamp,
-        'likes': {},
-        'comments': {},
-      };
-
-      // Save to Firebase
-      await FirebaseDatabase.instance
-          .ref()
-          .child('posts')
-          .child(postId)
-          .set(postData);
+        'timestamp': FieldValue.serverTimestamp(),
+      });
 
       _descriptionController.clear();
       await _loadPosts(); // Reload posts
@@ -165,23 +175,29 @@ class _PostScreenState extends State<PostScreen> {
       final userId = FirebaseAuth.instance.currentUser?.uid;
       if (userId == null) return;
 
-      final postRef = FirebaseDatabase.instance
-          .ref()
-          .child('posts')
-          .child(post.id)
-          .child('likes')
-          .child(userId);
-
       // Optimistic update
       setState(() {
         post.isLiked = !post.isLiked;
         post.likeCount += post.isLiked ? 1 : -1;
       });
 
+      // Firestore: Toggle like
       if (post.isLiked) {
-        await postRef.set(true);
+        await FirestoreService.likes.add({
+          'postId': post.id,
+          'userId': userId,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
       } else {
-        await postRef.remove();
+        // Find and delete the like document
+        final likeQuery = await FirestoreService.likes
+            .where('postId', isEqualTo: post.id)
+            .where('userId', isEqualTo: userId)
+            .get();
+        
+        for (var doc in likeQuery.docs) {
+          await doc.reference.delete();
+        }
       }
 
     } catch (e) {
@@ -330,25 +346,17 @@ class _PostScreenState extends State<PostScreen> {
       // Ensure we have the username for the commenter
       await _fetchUsername(userId);
 
-      final commentId = DateTime.now().millisecondsSinceEpoch.toString();
-      final commentData = {
+      // Firestore: Add comment
+      final commentDoc = await FirestoreService.comments.add({
+        'postId': post.id,
         'userId': userId,
         'content': content,
-        'timestamp': ServerValue.timestamp,
-      };
-
-      // Add comment to Firebase
-      await FirebaseDatabase.instance
-          .ref()
-          .child('posts')
-          .child(post.id)
-          .child('comments')
-          .child(commentId)
-          .set(commentData);
+        'timestamp': FieldValue.serverTimestamp(),
+      });
 
       // Optimistic update
       final newComment = CommentModel(
-        id: commentId,
+        id: commentDoc.id,
         userId: userId,
         content: content,
         timestamp: DateTime.now(),
@@ -370,17 +378,17 @@ class _PostScreenState extends State<PostScreen> {
     if (_usernames.containsKey(userId)) return;
 
     try {
-      final snapshot = await FirebaseDatabase.instance
-          .ref()
-          .child('users')
-          .child(userId)
-          .child('username')
-          .get();
-
-      if (snapshot.value != null) {
-        setState(() {
-          _usernames[userId] = snapshot.value.toString();
-        });
+      // Firestore: Get username
+      final userDoc = await FirestoreService.users.doc(userId).get();
+      
+      if (userDoc.exists) {
+        final data = userDoc.data() as Map<String, dynamic>?;
+        if (data != null) {
+          final username = data['username'] ?? 'Unknown User';
+          setState(() {
+            _usernames[userId] = username;
+          });
+        }
       }
     } catch (e) {
       print('Error fetching username: $e');
@@ -389,33 +397,29 @@ class _PostScreenState extends State<PostScreen> {
 
   Future<void> _loadUsernames() async {
     try {
-      final snapshot = await FirebaseDatabase.instance
-          .ref()
-          .child('users')
-          .get();
+      // Firestore: Get all users
+      final usersQuery = await FirestoreService.users.get();
 
-      if (snapshot.exists && snapshot.value != null) {
-        final data = snapshot.value as Map<dynamic, dynamic>;
-        data.forEach((userId, userData) {
-          if (userData is Map) {
-            // First try to get username from the root level
-            String? username = userData['username'];
-            
-            // If not found, try to get it from the profile
-            if (username == null && userData['profile'] is Map) {
-              final profile = userData['profile'];
-              username = profile['username'] ?? 
-                         profile['displayName'] ?? 
-                         'Unknown User';
-            }
-            
-            // If still not found, use Unknown User
-            _usernames[userId] = username ?? 'Unknown User';
-            print('Loaded username for $userId: ${_usernames[userId]}'); // Debug print
-          }
-        });
-        setState(() {});
+      for (var doc in usersQuery.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final userId = doc.id;
+        
+        // First try to get username from the root level
+        String? username = data['username'];
+        
+        // If not found, try to get it from the profile
+        if (username == null && data['profile'] is Map) {
+          final profile = data['profile'];
+          username = profile['username'] ?? 
+                     profile['displayName'] ?? 
+                     'Unknown User';
+        }
+        
+        // If still not found, use Unknown User
+        _usernames[userId] = username ?? 'Unknown User';
+        print('Loaded username for $userId: ${_usernames[userId]}'); // Debug print
       }
+      setState(() {});
     } catch (e) {
       print('Error loading usernames: $e');
     }

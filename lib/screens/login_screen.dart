@@ -9,7 +9,7 @@ import '../styles/colors.dart';
 import '../screens/post_screen.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
-import 'package:firebase_database/firebase_database.dart';
+import '../services/firestore_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -24,7 +24,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn();
 
   bool _isLoading = false;
 
@@ -32,33 +31,16 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       setState(() => _isLoading = true);
 
-      User? user;
-
-      if (kIsWeb) {
-        // Web sign-in flow
-        final googleProvider = GoogleAuthProvider();
-        final userCredential = await _auth.signInWithPopup(googleProvider);
-        user = userCredential.user;
-      } else {
-        // Mobile sign-in flow
-        final googleUser = await _googleSignIn.signIn();
-        if (googleUser == null) {
-          setState(() => _isLoading = false);
-          return; // user aborted sign in
-        }
-
-        final googleAuth = await googleUser.authentication;
-        final credential = GoogleAuthProvider.credential(
-          accessToken: googleAuth.accessToken,
-          idToken: googleAuth.idToken,
-        );
-
-        final userCredential = await _auth.signInWithCredential(credential);
-        user = userCredential.user;
-      }
+      // Use Firebase Auth Google provider for both web and mobile
+      final googleProvider = GoogleAuthProvider();
+      googleProvider.addScope('email');
+      googleProvider.addScope('profile');
+      
+      final userCredential = await _auth.signInWithPopup(googleProvider);
+      final user = userCredential.user;
 
       if (user != null) {
-        // Update user data in Realtime Database
+        // Update user data in Firestore
         await _updateUserData(user);
 
         // Update AppState or other state management if needed
@@ -87,12 +69,11 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _updateUserData(User user) async {
-    final ref = FirebaseDatabase.instance.ref("users/${user.uid}");
-    await ref.update({
+    await FirestoreService.updateUser(user.uid, {
       "displayName": user.displayName,
       "email": user.email,
       "photoURL": user.photoURL,
-      "lastLogin": ServerValue.timestamp,
+      "lastLogin": FirestoreService.serverTimestamp,
     });
   }
 

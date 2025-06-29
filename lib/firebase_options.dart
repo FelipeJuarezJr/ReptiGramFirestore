@@ -4,16 +4,15 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
-      // Web config
+      // Web config for Firestore project
       return const FirebaseOptions(
-        apiKey: "AIzaSyBf2rv_asH86gY2fEGY4yUw4NJYRr5nfnw",
-        authDomain: "reptigram-lite.firebaseapp.com",
-        databaseURL: "https://reptigram-lite-default-rtdb.firebaseio.com",
-        projectId: "reptigram-lite",
-        storageBucket: "reptigram-lite.firebasestorage.app",
-        messagingSenderId: "1023144692222",
-        appId: "1:1023144692222:web:a2f83e6788f1e0293018af",
-        measurementId: "G-XHBMWC2VD6",
+        apiKey: "AIzaSyDiT-1kdubTNYLe2waeCIYvGDx5nakKyh0",
+        authDomain: "reptigramfirestore.firebaseapp.com",
+        projectId: "reptigramfirestore",
+        storageBucket: "reptigramfirestore.firebasestorage.app",
+        messagingSenderId: "373955522567",
+        appId: "1:373955522567:web:7163187c33d378455bbaa2",
+        measurementId: "G-H7FDWLXW64",
       );
     }
     // You can add Android/iOS config here if needed.

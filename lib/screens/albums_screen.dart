@@ -5,13 +5,14 @@ import '../common/title_header.dart';
 import '../screens/binders_screen.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../models/photo_data.dart';
 import '../utils/photo_utils.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/firestore_service.dart';
 
 class AlbumsScreen extends StatefulWidget {
   const AlbumsScreen({super.key});
@@ -32,8 +33,8 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
     Future.microtask(() async {
       final appState = Provider.of<AppState>(context, listen: false);
       await appState.initializeUser();
-      _loadAlbums();
-      _loadAlbumPhotos();
+      await _loadAlbums();
+      await _loadAlbumPhotos();
     });
   }
 
@@ -41,25 +42,17 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
     try {
       final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
       if (currentUser == null) return;
-
-      final snapshot = await FirebaseDatabase.instance
-          .ref()
-          .child('users')
-          .child(currentUser.uid)
-          .child('albums')
-          .get();
-
-      if (snapshot.exists && snapshot.value != null) {
-        final data = snapshot.value as Map<dynamic, dynamic>;
-        setState(() {
-          albums = ['My Album']; // Reset to default album
-          data.forEach((key, value) {
-            if (value['name'] != null) {
-              albums.add(value['name']);
-            }
-          });
-        });
-      }
+      // Firestore: get albums for user
+      final query = await FirestoreService.albums.where('userId', isEqualTo: currentUser.uid).get();
+      setState(() {
+        albums = ['My Album'];
+        for (var doc in query.docs) {
+          final data = doc.data() as Map<String, dynamic>;
+          if (data['name'] != null) {
+            albums.add(data['name']);
+          }
+        }
+      });
     } catch (e) {
       print('Error loading albums: $e');
     }
@@ -70,46 +63,32 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
     try {
       final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
       if (currentUser == null) return;
-
-      final snapshot = await FirebaseDatabase.instance
-          .ref()
-          .child('users')
-          .child(currentUser.uid)
-          .child('photos')
-          .get();
-
-      if (snapshot.exists && snapshot.value != null) {
-        final data = snapshot.value as Map<dynamic, dynamic>;
-        albumPhotos.clear();
-        
-        // Initialize lists for each album
-        for (var album in albums) {
-          albumPhotos[album] = [];
-        }
-
-        // Sort photos into albums
-        data.forEach((key, value) {
-          if (value['source'] == 'albums') {
-            final photo = PhotoData(
-              id: key,
-              file: null,
-              firebaseUrl: value['url'],
-              title: value['title'] ?? 'Photo Details',
-              comment: value['comment'] ?? '',
-              userId: currentUser.uid,
-              isLiked: false,
-              likesCount: 0,
-            );
-            
-            final albumName = value['albumName'] ?? 'My Album';
-            if (albumPhotos.containsKey(albumName)) {
-              albumPhotos[albumName]!.add(photo);
-            }
-          }
-        });
-
-        setState(() {});
+      final query = await FirestoreService.photos
+        .where('userId', isEqualTo: currentUser.uid)
+        .where('source', isEqualTo: 'albums')
+        .get();
+      albumPhotos.clear();
+      for (var album in albums) {
+        albumPhotos[album] = [];
       }
+      for (var doc in query.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final photo = PhotoData(
+          id: doc.id,
+          file: null,
+          firebaseUrl: data['url'],
+          title: data['title'] ?? 'Photo Details',
+          comment: data['comment'] ?? '',
+          userId: currentUser.uid,
+          isLiked: false,
+          likesCount: 0,
+        );
+        final albumName = data['albumName'] ?? 'My Album';
+        if (albumPhotos.containsKey(albumName)) {
+          albumPhotos[albumName]!.add(photo);
+        }
+      }
+      setState(() {});
     } catch (e) {
       print('Error loading album photos: $e');
     } finally {
@@ -198,20 +177,14 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
 
                                 final downloadUrl = await storageRef.getDownloadURL();
 
-                                // Save to Realtime Database with hierarchy info
-                                await FirebaseDatabase.instance
-                                    .ref()
-                                    .child('users')
-                                    .child(currentUser.uid)
-                                    .child('photos')
-                                    .child(photoId)
-                                    .set({
-                                      'url': downloadUrl,
-                                      'timestamp': ServerValue.timestamp,
-                                      'albumName': 'My Album',
-                                      'userId': currentUser.uid,
-                                      'source': 'albums',
-                                    });
+                                // Firestore: Save photo with hierarchy info
+                                await FirestoreService.photos.doc(photoId).set({
+                                  'url': downloadUrl,
+                                  'timestamp': FieldValue.serverTimestamp(),
+                                  'albumName': 'My Album',
+                                  'userId': currentUser.uid,
+                                  'source': 'albums',
+                                });
 
                                 Navigator.pop(context); // Hide loading indicator
                                 await _loadAlbumPhotos(); // Reload photos
@@ -317,30 +290,16 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                       );
                       return;
                     }
-
-                    // Create a unique ID for the album
-                    final albumId = DateTime.now().millisecondsSinceEpoch.toString();
-
-                    // Save to Firebase
-                    await FirebaseDatabase.instance
-                        .ref()
-                        .child('users')
-                        .child(currentUser.uid)
-                        .child('albums')
-                        .child(albumId)
-                        .set({
-                          'name': newAlbumName,
-                          'createdAt': ServerValue.timestamp,
-                          'userId': currentUser.uid,
-                        });
-
-                    // Update local state
+                    // Firestore: create album
+                    await FirestoreService.albums.add({
+                      'name': newAlbumName,
+                      'createdAt': FieldValue.serverTimestamp(),
+                      'userId': currentUser.uid,
+                    });
                     setState(() {
                       albums.add(newAlbumName);
                     });
-
                     Navigator.of(context).pop();
-                    
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Album created successfully!')),
                     );
@@ -364,7 +323,6 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
 
   Widget _buildAlbumCard(String albumName) {
     final photos = albumPhotos[albumName] ?? [];
-    
     return InkWell(
       onTap: () {
         Navigator.push(
@@ -398,7 +356,6 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                   builder: (context, constraints) {
                     return Column(
                       children: [
-                        // Large image on top
                         if (photos.isNotEmpty)
                           Expanded(
                             flex: 2,
@@ -414,7 +371,6 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                               },
                             ),
                           ),
-                        // Three smaller images below
                         if (photos.length > 1)
                           Expanded(
                             flex: 1,
@@ -433,7 +389,6 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                                       },
                                     ),
                                   ),
-                                // Fill remaining space with empty containers if needed
                                 for (var i = photos.length; i < 4; i++)
                                   Expanded(
                                     child: Container(
@@ -448,7 +403,6 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                   },
                 ),
               ),
-            // Album name overlay
             Positioned(
               bottom: 0,
               left: 0,
@@ -547,7 +501,6 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                 height: double.infinity,
               ),
             ),
-            // Title overlay
             Positioned(
               top: 0,
               left: 0,
@@ -580,7 +533,6 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                 ),
               ),
             ),
-            // Like icon
             Positioned(
               bottom: 8,
               right: 8,
@@ -917,21 +869,14 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
         throw Exception('Photo ID cannot be empty');
       }
 
-      final DatabaseReference photoRef = FirebaseDatabase.instance
-          .ref()
-          .child('users')
-          .child(currentUser.uid)
-          .child('photos')
-          .child(photo.id);
-
       final updates = {
         'title': photo.title.trim(),
         'comment': photo.comment.trim(),
         'isLiked': photo.isLiked,
-        'lastModified': ServerValue.timestamp,
+        'lastModified': FieldValue.serverTimestamp(),
       };
 
-      await photoRef.update(updates);
+      await FirestoreService.photos.doc(photo.id).update(updates);
 
       if (mounted) {
         final appState = Provider.of<AppState>(context, listen: false);

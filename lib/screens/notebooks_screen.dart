@@ -4,7 +4,6 @@ import '../common/header.dart';
 import '../common/title_header.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import 'dart:io';
@@ -12,6 +11,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import '../models/photo_data.dart';
 import '../screens/binders_screen.dart';
 import '../screens/photos_only_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/firestore_service.dart';
 
 class NotebooksScreen extends StatefulWidget {
   final String notebookName;
@@ -51,26 +52,22 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
       final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
       if (currentUser == null) return;
 
-      final snapshot = await FirebaseDatabase.instance
-          .ref()
-          .child('users')
-          .child(currentUser.uid)
-          .child('notebooks')
+      // Firestore: Get notebooks for user, binder, and album
+      final notebooksQuery = await FirestoreService.notebooks
+          .where('userId', isEqualTo: currentUser.uid)
+          .where('binderName', isEqualTo: widget.parentBinderName)
+          .where('albumName', isEqualTo: widget.parentAlbumName)
           .get();
 
-      if (snapshot.exists && snapshot.value != null) {
-        final data = snapshot.value as Map<dynamic, dynamic>;
-        setState(() {
-          notebooks = ['My Notebook']; // Reset to default notebook
-          data.forEach((key, value) {
-            if (value['name'] != null && 
-                value['binderName'] == widget.parentBinderName &&
-                value['albumName'] == widget.parentAlbumName) {
-              notebooks.add(value['name']);
-            }
-          });
-        });
-      }
+      setState(() {
+        notebooks = ['My Notebook']; // Reset to default notebook
+        for (var doc in notebooksQuery.docs) {
+          final data = doc.data() as Map<String, dynamic>;
+          if (data['name'] != null) {
+            notebooks.add(data['name']);
+          }
+        }
+      });
     } catch (e) {
       print('Error loading notebooks: $e');
     }
@@ -82,38 +79,33 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
       final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
       if (currentUser == null) return;
 
-      final snapshot = await FirebaseDatabase.instance
-          .ref()
-          .child('users')
-          .child(currentUser.uid)
-          .child('photos')
+      // Firestore: Get photos for this notebook
+      final photosQuery = await FirestoreService.photos
+          .where('userId', isEqualTo: currentUser.uid)
+          .where('source', isEqualTo: 'notebooks')
+          .where('notebookName', isEqualTo: widget.notebookName)
+          .where('binderName', isEqualTo: widget.parentBinderName)
+          .where('albumName', isEqualTo: widget.parentAlbumName)
           .get();
 
-      if (snapshot.exists && snapshot.value != null) {
-        final data = snapshot.value as Map<dynamic, dynamic>;
-        notebookPhotos.clear();
+      notebookPhotos.clear();
 
-        data.forEach((key, value) {
-          if (value['source'] == 'notebooks' && 
-              value['notebookName'] == widget.notebookName &&
-              value['binderName'] == widget.parentBinderName &&
-              value['albumName'] == widget.parentAlbumName) {
-            final photo = PhotoData(
-              id: key,
-              file: null,
-              firebaseUrl: value['url'],
-              title: value['title'] ?? 'Photo Details',
-              comment: value['comment'] ?? '',
-              userId: currentUser.uid,
-              isLiked: false,
-              likesCount: 0,
-            );
-            notebookPhotos.add(photo);
-          }
-        });
-
-        setState(() {});
+      for (var doc in photosQuery.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final photo = PhotoData(
+          id: doc.id,
+          file: null,
+          firebaseUrl: data['url'],
+          title: data['title'] ?? 'Photo Details',
+          comment: data['comment'] ?? '',
+          userId: currentUser.uid,
+          isLiked: data['isLiked'] ?? false,
+          likesCount: 0,
+        );
+        notebookPhotos.add(photo);
       }
+
+      setState(() {});
     } catch (e) {
       print('Error loading notebook photos: $e');
     } finally {
@@ -218,22 +210,16 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
 
                                 final downloadUrl = await storageRef.getDownloadURL();
 
-                                // Save to Realtime Database with hierarchy info
-                                await FirebaseDatabase.instance
-                                    .ref()
-                                    .child('users')
-                                    .child(currentUser.uid)
-                                    .child('photos')
-                                    .child(photoId)
-                                    .set({
-                                      'url': downloadUrl,
-                                      'timestamp': ServerValue.timestamp,
-                                      'notebookName': widget.notebookName,
-                                      'binderName': widget.parentBinderName,
-                                      'albumName': widget.parentAlbumName,
-                                      'userId': currentUser.uid,
-                                      'source': 'notebooks',
-                                    });
+                                // Firestore: Save photo with hierarchy info
+                                await FirestoreService.photos.doc(photoId).set({
+                                  'url': downloadUrl,
+                                  'timestamp': FieldValue.serverTimestamp(),
+                                  'notebookName': widget.notebookName,
+                                  'binderName': widget.parentBinderName,
+                                  'albumName': widget.parentAlbumName,
+                                  'userId': currentUser.uid,
+                                  'source': 'notebooks',
+                                });
 
                                 Navigator.pop(context); // Hide loading indicator
                                 await _loadNotebookPhotos(); // Reload photos
@@ -874,21 +860,13 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
         throw Exception('Photo ID cannot be empty');
       }
 
-      final DatabaseReference photoRef = FirebaseDatabase.instance
-          .ref()
-          .child('users')
-          .child(currentUser.uid)
-          .child('photos')
-          .child(photo.id);
-
-      final updates = {
+      // Firestore: Update photo
+      await FirestoreService.photos.doc(photo.id).update({
         'title': photo.title.trim(),
         'comment': photo.comment.trim(),
         'isLiked': photo.isLiked,
-        'lastModified': ServerValue.timestamp,
-      };
-
-      await photoRef.update(updates);
+        'lastModified': FieldValue.serverTimestamp(),
+      });
 
       if (mounted) {
         final appState = Provider.of<AppState>(context, listen: false);
@@ -959,23 +937,14 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                       return;
                     }
 
-                    // Create a unique ID for the notebook
-                    final notebookId = DateTime.now().millisecondsSinceEpoch.toString();
-
-                    // Save to Firebase with hierarchy info
-                    await FirebaseDatabase.instance
-                        .ref()
-                        .child('users')
-                        .child(currentUser.uid)
-                        .child('notebooks')
-                        .child(notebookId)
-                        .set({
-                          'name': newNotebookName,
-                          'createdAt': ServerValue.timestamp,
-                          'userId': currentUser.uid,
-                          'binderName': widget.parentBinderName,
-                          'albumName': widget.parentAlbumName,
-                        });
+                    // Firestore: Create notebook
+                    await FirestoreService.notebooks.add({
+                      'name': newNotebookName,
+                      'createdAt': FieldValue.serverTimestamp(),
+                      'userId': currentUser.uid,
+                      'binderName': widget.parentBinderName,
+                      'albumName': widget.parentAlbumName,
+                    });
 
                     Navigator.of(context).pop();
                     
