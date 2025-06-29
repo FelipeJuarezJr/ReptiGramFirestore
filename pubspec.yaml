@@ -1,0 +1,42 @@
+name: ReptiGram
+description: A thriving hub for reptile lovers to connect, learn, and trade
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  url_launcher: ^6.2.4
+  flutter:
+    sdk: flutter
+  intl: ^0.18.0
+  cupertino_icons: ^1.0.2
+  firebase_core: ^2.24.2
+  firebase_auth: ^4.15.3
+  firebase_storage: ^11.5.6
+  firebase_database: ^10.3.8
+  firebase_analytics: ^10.7.4
+  google_sign_in: ^6.3.0
+  google_sign_in_web: ^0.12.4
+  flutter_svg: ^2.0.9
+  image_picker: ^0.8.7
+  cached_network_image: ^3.2.3
+  provider: ^6.1.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true
+  
+  # Remove the non-existent asset directories
+  assets:
+    - assets/img/reptiGramLogo.png
+    - assets/img/google_logo.png
+
+  #   - assets/images/
+  #   - assets/icons/

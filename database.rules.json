@@ -1,0 +1,27 @@
+{
+  "rules": {
+    ".read": true,
+    "photos": {
+      ".read": true,
+      ".write": "auth != null"
+    },
+    "users": {
+      "$userId": {
+        ".read": true,
+        "photos": {
+          ".read": true,
+          ".write": "auth != null",
+          ".indexOn": "source",
+          "$photoId": {
+            ".read": true,
+            "likes": {
+              ".read": true,
+              ".write": "auth != null"
+            },
+            ".indexOn": ["source"]
+          }
+        }
+      }
+    }
+  }
+}
