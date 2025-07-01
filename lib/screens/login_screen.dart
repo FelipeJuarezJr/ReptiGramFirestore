@@ -40,6 +40,15 @@ class _LoginScreenState extends State<LoginScreen> {
       print('Firebase Auth instance: $auth');
       print('Current user: ${auth.currentUser}');
       print('Auth state: ${auth.authStateChanges()}');
+      
+      // Test available sign-in methods
+      print('Testing available sign-in methods...');
+      try {
+        final methods = await auth.fetchSignInMethodsForEmail('gecko1@gmail.com');
+        print('Available sign-in methods for gecko1@gmail.com: $methods');
+      } catch (e) {
+        print('Error checking sign-in methods: $e');
+      }
     } catch (e) {
       print('Firebase Auth test error: $e');
     }
@@ -91,12 +100,36 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _updateUserData(User user) async {
-    await FirestoreService.updateUser(user.uid, {
-      "displayName": user.displayName,
-      "email": user.email,
-      "photoURL": user.photoURL,
-      "lastLogin": FirestoreService.serverTimestamp,
-    });
+    try {
+      // Check if user document exists
+      final userDoc = await FirestoreService.users.doc(user.uid).get();
+      
+      if (userDoc.exists) {
+        // Update existing user document
+        await FirestoreService.updateUser(user.uid, {
+          "displayName": user.displayName,
+          "email": user.email,
+          "photoURL": user.photoURL,
+          "lastLogin": FirestoreService.serverTimestamp,
+        });
+        print('Updated existing user document for ${user.email}');
+      } else {
+        // Create new user document
+        await FirestoreService.users.doc(user.uid).set({
+          "uid": user.uid,
+          "displayName": user.displayName,
+          "email": user.email,
+          "photoURL": user.photoURL,
+          "username": user.email?.split('@')[0] ?? 'user', // Use email prefix as username
+          "createdAt": FirestoreService.serverTimestamp,
+          "lastLogin": FirestoreService.serverTimestamp,
+        });
+        print('Created new user document for ${user.email}');
+      }
+    } catch (e) {
+      print('Error updating user data: $e');
+      // Don't throw error - let user continue even if Firestore update fails
+    }
   }
 
   Future<void> _handleLogin() async {
@@ -105,6 +138,7 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       setState(() => _isLoading = true);
       print('Starting email/password login...');
+      print('Email: ${_emailController.text.trim()}');
 
       await _auth.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
@@ -124,13 +158,29 @@ class _LoginScreenState extends State<LoginScreen> {
       print('Firebase Auth error: ${e.code} - ${e.message}');
       String message = 'An error occurred';
       if (e.code == 'user-not-found') {
-        message = 'No user found for that email.';
+        message = 'No user found for that email. Please register first.';
+        print('User not found - they need to register in this project');
       } else if (e.code == 'wrong-password') {
         message = 'Wrong password provided.';
+      } else if (e.code == 'invalid-email') {
+        message = 'Invalid email address.';
+      } else if (e.code == 'user-disabled') {
+        message = 'This account has been disabled.';
+      } else if (e.code == 'too-many-requests') {
+        message = 'Too many failed attempts. Please try again later.';
+      } else {
+        message = 'Login failed: ${e.message}';
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(message)),
+        );
+      }
+    } catch (e) {
+      print('General login error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Login failed: ${e.toString()}')),
         );
       }
     } finally {
