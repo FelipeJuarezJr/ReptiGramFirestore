@@ -27,19 +27,40 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _isLoading = false;
 
+  @override
+  void initState() {
+    super.initState();
+    _testFirebaseAuth();
+  }
+
+  Future<void> _testFirebaseAuth() async {
+    try {
+      print('Testing Firebase Auth...');
+      final auth = FirebaseAuth.instance;
+      print('Firebase Auth instance: $auth');
+      print('Current user: ${auth.currentUser}');
+      print('Auth state: ${auth.authStateChanges()}');
+    } catch (e) {
+      print('Firebase Auth test error: $e');
+    }
+  }
+
   Future<void> _handleGoogleSignIn() async {
     try {
       setState(() => _isLoading = true);
+      print('Starting Google Sign-In...');
 
       // Use Firebase Auth Google provider for both web and mobile
       final googleProvider = GoogleAuthProvider();
       googleProvider.addScope('email');
       googleProvider.addScope('profile');
       
+      print('Signing in with Google...');
       final userCredential = await _auth.signInWithPopup(googleProvider);
       final user = userCredential.user;
 
       if (user != null) {
+        print('Google Sign-In successful! User: ${user.email}');
         // Update user data in Firestore
         await _updateUserData(user);
 
@@ -57,6 +78,7 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
     } catch (e) {
+      print('Google sign-in error: $e');
       debugPrint('Google sign-in error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -82,12 +104,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       setState(() => _isLoading = true);
+      print('Starting email/password login...');
 
       await _auth.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
 
+      print('Email/password login successful!');
       if (mounted) {
         Navigator.pushReplacement(
           context,
@@ -97,6 +121,7 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } on FirebaseAuthException catch (e) {
+      print('Firebase Auth error: ${e.code} - ${e.message}');
       String message = 'An error occurred';
       if (e.code == 'user-not-found') {
         message = 'No user found for that email.';

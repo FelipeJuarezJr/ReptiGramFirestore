@@ -104,9 +104,10 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
       final Reference ref = _storage
           .ref()
           .child('photos')
+          .child(userId)
           .child(photoId);
       
-      print('Uploading to path: photos/$photoId');
+      print('Uploading to path: photos/$userId/$photoId');
 
       if (kIsWeb) {
         final bytes = await pickedFile.readAsBytes();

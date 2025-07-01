@@ -7,6 +7,9 @@
       "**/node_modules/**"
     ]
   },
+  "firestore": {
+    "rules": "firestore_rules.rules"
+  },
   "storage": {
     "rules": "storage.rules"
   }

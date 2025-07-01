@@ -298,6 +298,7 @@ class _BindersScreenState extends State<BindersScreen> {
                                 final storageRef = FirebaseStorage.instance
                                     .ref()
                                     .child('photos')
+                                    .child(currentUser.uid)
                                     .child(photoId);
 
                                 if (kIsWeb) {

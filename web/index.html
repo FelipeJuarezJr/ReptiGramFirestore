@@ -17,31 +17,18 @@
 
   <link rel="manifest" href="manifest.json" />
   
-  <meta name="google-signin-client_id" content="1023144692222-esbccs6kiu7d5qtnq4vp502cms2sq9hb.apps.googleusercontent.com" />
+  <!-- <meta name="google-signin-client_id" content="1023144692222-esbccs6kiu7d5qtnq4vp502cms2sq9hb.apps.googleusercontent.com" /> -->
 
-   <!-- Firebase SDK -->
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics-compat.js"></script>
+   <!-- Firebase SDK - Removed as Flutter handles Firebase -->
+   <!-- <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script> -->
+   <!-- <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script> -->
+   <!-- <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script> -->
+   <!-- <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script> -->
+   <!-- <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics-compat.js"></script> -->
 
   <script>
-    // Your Firebase config
-    const firebaseConfig = {
-      apiKey: "AIzaSyBf2rv_asH86gY2fEGY4yUw4NJYRr5nfnw",
-      authDomain: "reptigram-lite.firebaseapp.com",
-      projectId: "reptigram-lite",
-      storageBucket: "reptigram-lite.firebasestorage.app",
-      messagingSenderId: "1023144692222",
-      appId: "1:1023144692222:web:a2f83e6788f1e0293018af",
-      measurementId: "G-XHBMWC2VD6",
-      databaseURL: "https://reptigram-lite-default-rtdb.firebaseio.com"
-    };
-
-    // Initialize Firebase
-    const app = firebase.initializeApp(firebaseConfig);
-    const database = firebase.database();
+    // Firebase config will be handled by Flutter
+    // No need to initialize here as Flutter handles it
   </script>
 
   <script>

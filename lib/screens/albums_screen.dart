@@ -160,6 +160,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                                 final storageRef = FirebaseStorage.instance
                                     .ref()
                                     .child('photos')
+                                    .child(currentUser.uid)
                                     .child(photoId);
 
                                 if (kIsWeb) {
