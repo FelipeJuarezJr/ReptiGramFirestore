@@ -5,6 +5,7 @@ import 'firebase_options.dart';
 import 'screens/login_screen.dart';
 import 'state/app_state.dart';
 import 'state/auth_state.dart';
+import 'state/dark_mode_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,6 +32,7 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AppState()),
         ChangeNotifierProvider(create: (_) => AuthState()),
+        ChangeNotifierProvider(create: (_) => DarkModeProvider()),
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,

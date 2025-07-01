@@ -3,9 +3,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import '../styles/colors.dart';
 import '../screens/login_screen.dart';
+import '../screens/settings_screen.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data';
 import 'package:url_launcher/url_launcher.dart';
+import '../screens/post_screen.dart';
+import '../screens/albums_screen.dart';
 
 class NavDrawer extends StatefulWidget {
   final String? userEmail;
@@ -234,21 +237,36 @@ class _NavDrawerState extends State<NavDrawer> {
             leading: const Icon(Icons.home),
             title: const Text('Home'),
             onTap: () {
-              Navigator.pushReplacementNamed(context, '/home');
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const PostScreen(),
+                ),
+              );
             },
           ),
           ListTile(
             leading: const Icon(Icons.photo_library),
             title: const Text('Photos'),
             onTap: () {
-              Navigator.pushReplacementNamed(context, '/photos');
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const AlbumsScreen(),
+                ),
+              );
             },
           ),
           ListTile(
             leading: const Icon(Icons.settings),
             title: const Text('Settings'),
             onTap: () {
-              Navigator.pushReplacementNamed(context, '/settings');
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => SettingsScreen(),
+                ),
+              );
             },
           ),
           const Divider(),

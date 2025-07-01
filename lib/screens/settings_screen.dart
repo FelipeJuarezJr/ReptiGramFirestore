@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../state/dark_mode_provider.dart';
+import '../styles/colors.dart';
 
 class SettingsScreen extends StatefulWidget {
   @override
@@ -8,32 +10,417 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  bool _isLoading = false;
+
   @override
   Widget build(BuildContext context) {
     final darkModeProvider = Provider.of<DarkModeProvider>(context);
+    final user = _auth.currentUser;
+    final isGoogleUser = user?.providerData.any((p) => p.providerId == 'google.com') ?? false;
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Settings'),
-      ),
-      body: ListView(
-        children: [
-          ListTile(
-            leading: const Icon(Icons.language),
-            title: const Text('Language'),
-            onTap: () {
-              // TODO: Implement language selection
-            },
+      backgroundColor: Colors.transparent,
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: AppColors.mainGradient,
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back, color: AppColors.titleText),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                    const Text(
+                      'Settings',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.titleText,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Settings List
+              Expanded(
+                child: Container(
+                  margin: const EdgeInsets.all(16.0),
+                  decoration: BoxDecoration(
+                    gradient: AppColors.inputGradient,
+                    borderRadius: AppColors.pillShape,
+                  ),
+                  child: ListView(
+                    padding: const EdgeInsets.all(16.0),
+                    children: [
+                      // User Info Section
+                      if (user != null) ...[
+                        _buildSectionHeader('Account Information'),
+                        _buildUserInfoTile(user),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // Password Management Section (only for email/password users)
+                      if (!isGoogleUser && user != null) ...[
+                        _buildSectionHeader('Password Management'),
+                        _buildPasswordTile('Change Password', Icons.lock, () => _showChangePasswordDialog()),
+                        _buildPasswordTile('Reset Password', Icons.lock_reset, () => _showResetPasswordDialog()),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // App Settings Section
+                      _buildSectionHeader('App Settings'),
+                      _buildSettingTile(
+                        'Dark Mode',
+                        Icons.dark_mode,
+                        trailing: Switch(
+                          value: darkModeProvider.isDarkMode,
+                          onChanged: darkModeProvider.toggleDarkMode,
+                          activeColor: Colors.brown,
+                        ),
+                      ),
+                      _buildSettingTile(
+                        'Language',
+                        Icons.language,
+                        onTap: () {
+                          // TODO: Implement language selection
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Language selection coming soon!')),
+                          );
+                        },
+                      ),
+
+                      // Account Actions Section
+                      if (user != null) ...[
+                        const SizedBox(height: 16),
+                        _buildSectionHeader('Account Actions'),
+                        _buildSettingTile(
+                          'Sign Out',
+                          Icons.logout,
+                          onTap: _signOut,
+                          textColor: Colors.red,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
-          ListTile(
-            leading: const Icon(Icons.dark_mode),
-            title: const Text('Dark Mode'),
-            trailing: Switch(
-              value: darkModeProvider.isDarkMode,
-              onChanged: darkModeProvider.toggleDarkMode,
-            ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+          color: Colors.brown,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUserInfoTile(User user) {
+    return Container(
+      padding: const EdgeInsets.all(16.0),
+      decoration: BoxDecoration(
+        color: Colors.brown.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 30,
+                backgroundImage: user.photoURL != null ? NetworkImage(user.photoURL!) : null,
+                child: user.photoURL == null ? const Icon(Icons.person, size: 30) : null,
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      user.displayName ?? 'User',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.brown,
+                      ),
+                    ),
+                    Text(
+                      user.email ?? 'No email',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.brown,
+                      ),
+                    ),
+                    Text(
+                      'Provider: ${user.providerData.first.providerId}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildPasswordTile(String title, IconData icon, VoidCallback onTap) {
+    return ListTile(
+      leading: Icon(icon, color: Colors.brown),
+      title: Text(
+        title,
+        style: const TextStyle(color: Colors.brown),
+      ),
+      trailing: const Icon(Icons.arrow_forward_ios, color: Colors.brown, size: 16),
+      onTap: onTap,
+    );
+  }
+
+  Widget _buildSettingTile(String title, IconData icon, {Widget? trailing, VoidCallback? onTap, Color? textColor}) {
+    return ListTile(
+      leading: Icon(icon, color: textColor ?? Colors.brown),
+      title: Text(
+        title,
+        style: TextStyle(color: textColor ?? Colors.brown),
+      ),
+      trailing: trailing ?? (onTap != null ? const Icon(Icons.arrow_forward_ios, color: Colors.brown, size: 16) : null),
+      onTap: onTap,
+    );
+  }
+
+  void _showChangePasswordDialog() {
+    final currentPasswordController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: AppColors.pillShape),
+        title: const Text('Change Password', style: TextStyle(color: Colors.brown)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: currentPasswordController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Current Password',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: newPasswordController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'New Password',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: confirmPasswordController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Confirm New Password',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.brown)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _changePassword(
+                currentPasswordController.text,
+                newPasswordController.text,
+                confirmPasswordController.text,
+              );
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.brown),
+            child: const Text('Change Password', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showResetPasswordDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: AppColors.pillShape),
+        title: const Text('Reset Password', style: TextStyle(color: Colors.brown)),
+        content: const Text(
+          'A password reset email will be sent to your email address. '
+          'Check your inbox and follow the link to reset your password.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.brown)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _resetPassword();
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.brown),
+            child: const Text('Send Reset Email', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _changePassword(String currentPassword, String newPassword, String confirmPassword) async {
+    if (newPassword != confirmPassword) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('New passwords do not match')),
+      );
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('New password must be at least 6 characters')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final user = _auth.currentUser;
+      if (user == null) throw Exception('No user logged in');
+
+      // Re-authenticate user before changing password
+      final credential = EmailAuthProvider.credential(
+        email: user.email!,
+        password: currentPassword,
+      );
+      await user.reauthenticateWithCredential(credential);
+
+      // Change password
+      await user.updatePassword(newPassword);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Password changed successfully!')),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      String message = 'Failed to change password';
+      if (e.code == 'wrong-password') {
+        message = 'Current password is incorrect';
+      } else if (e.code == 'weak-password') {
+        message = 'New password is too weak';
+      } else {
+        message = 'Error: ${e.message}';
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: ${e.toString()}')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _resetPassword() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final user = _auth.currentUser;
+      if (user?.email == null) throw Exception('No email available');
+
+      await _auth.sendPasswordResetEmail(email: user!.email!);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Password reset email sent! Check your inbox.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      String message = 'Failed to send reset email';
+      if (e.code == 'user-not-found') {
+        message = 'No user found with that email';
+      } else if (e.code == 'invalid-email') {
+        message = 'Invalid email address';
+      } else {
+        message = 'Error: ${e.message}';
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: ${e.toString()}')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _signOut() async {
+    try {
+      await _auth.signOut();
+      if (mounted) {
+        Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error signing out: ${e.toString()}')),
+        );
+      }
+    }
   }
 } 
