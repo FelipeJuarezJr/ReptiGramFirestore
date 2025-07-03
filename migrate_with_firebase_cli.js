@@ -7,15 +7,15 @@ async function migrateWithFirebaseCLI() {
     console.log('Starting Firebase CLI migration...');
     
     // Step 1: Export users from old project
-    console.log('\n1. Exporting users from reptigram-lite...');
-    const exportCommand = 'firebase auth:export users_old.json --project reptigram-lite';
+    console.log('\n1. Exporting users from old project...');
+    const exportCommand = 'firebase auth:export users_old.json --project [OLD_PROJECT_ID]';
     
     exec(exportCommand, (error, stdout, stderr) => {
       if (error) {
         console.log('Error exporting users:', error.message);
         console.log('You may need to:');
         console.log('1. Run: firebase login');
-        console.log('2. Run: firebase use reptigram-lite');
+        console.log('2. Run: firebase use [OLD_PROJECT_ID]');
         console.log('3. Then run this script again');
         return;
       }

@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../styles/colors.dart';
 import '../common/header.dart';
 import '../common/title_header.dart';
@@ -23,6 +27,7 @@ class FeedScreen extends StatefulWidget {
 class _FeedScreenState extends State<FeedScreen> {
   List<PhotoData> _photos = [];
   bool _isLoading = false;
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
@@ -56,15 +61,18 @@ class _FeedScreenState extends State<FeedScreen> {
       final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
       print('Current user: ${currentUser?.uid}');
       
-      // Firestore: Get all photos
+      // First, get all photos from Firestore
       final photosQuery = await FirestoreService.photos.get();
+      print('Found ${photosQuery.docs.length} photos in Firestore');
       
-      // Firestore: Get all likes
+      // Create a map of existing Firestore photos
+      final firestorePhotos = <String, Map<String, dynamic>>{};
+      for (var doc in photosQuery.docs) {
+        firestorePhotos[doc.id] = doc.data() as Map<String, dynamic>;
+      }
+      
+      // Get all likes from Firestore
       final likesQuery = await FirestoreService.likes.get();
-
-      final List<PhotoData> allPhotos = [];
-      
-      // Convert likes to Map for faster lookups
       final likesMap = <String, Map<String, bool>>{};
       for (var doc in likesQuery.docs) {
         final data = doc.data() as Map<String, dynamic>;
@@ -76,17 +84,29 @@ class _FeedScreenState extends State<FeedScreen> {
         }
       }
 
-      for (var doc in photosQuery.docs) {
-        final data = doc.data() as Map<String, dynamic>;
-        final photoId = doc.id;
+      final List<PhotoData> allPhotos = [];
+      
+      // Scan Firebase Storage for all images
+      print('Scanning Firebase Storage for all images...');
+      await _scanStorageForImages(allPhotos, firestorePhotos, likesMap, currentUser);
+      
+      // Add Firestore photos that might not be in Storage
+      for (var entry in firestorePhotos.entries) {
+        final photoId = entry.key;
+        final data = entry.value;
         final userId = data['userId'] as String?;
         
         if (userId == null) continue;
         
+        // Check if this photo is already added from Storage scan
+        final alreadyAdded = allPhotos.any((photo) => photo.id == photoId);
+        if (alreadyAdded) continue;
+        
+        print('Adding Firestore-only photo: $photoId from user $userId');
+        
         final photoLikes = likesMap[photoId] ?? {};
         final isLiked = currentUser != null && photoLikes[currentUser.uid] == true;
 
-        // Handle timestamp
         final timestamp = data['timestamp'] is Timestamp 
             ? (data['timestamp'] as Timestamp).millisecondsSinceEpoch
             : data['timestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch;
@@ -113,7 +133,7 @@ class _FeedScreenState extends State<FeedScreen> {
           ? allPhotos.where((photo) => photo.isLiked).toList()
           : allPhotos;
 
-      print('Total photos: ${allPhotos.length}');
+      print('Total photos found: ${allPhotos.length}');
       print('Filtered photos: ${filteredPhotos.length}');
       print('Show liked only: ${widget.showLikedOnly}');
 
@@ -138,6 +158,240 @@ class _FeedScreenState extends State<FeedScreen> {
       if (mounted) {
         setState(() => _isLoading = false);
       }
+    }
+  }
+
+  Future<void> _scanStorageForImages(
+    List<PhotoData> allPhotos,
+    Map<String, Map<String, dynamic>> firestorePhotos,
+    Map<String, Map<String, bool>> likesMap,
+    dynamic currentUser,
+  ) async {
+    try {
+      final storage = FirebaseStorage.instance;
+      
+      // Scan the photos folder
+      print('Scanning storage path: photos');
+      
+      try {
+        final photosRef = storage.ref().child('photos');
+        final result = await photosRef.listAll();
+        
+        print('Found ${result.items.length} items in photos folder');
+        
+        // Process every item in the photos folder as a photo
+        for (final item in result.items) {
+          print('Processing item in photos/: ${item.name}');
+          await _processStorageImage(
+            item,
+            allPhotos,
+            firestorePhotos,
+            likesMap,
+            currentUser,
+            'photos',
+          );
+        }
+      } catch (e) {
+        print('Error scanning photos folder: $e');
+        // Fallback: try to access known user folders
+        await _tryAccessKnownUserFolders(allPhotos, firestorePhotos, likesMap, currentUser);
+      }
+      
+      // Also scan users folder if it exists
+      try {
+        print('Scanning storage path: users');
+        final usersRef = storage.ref().child('users');
+        final usersResult = await usersRef.listAll();
+        
+        for (final userFolder in usersResult.items) {
+          if (!userFolder.name.contains('.')) {
+            try {
+              final userPhotosRef = userFolder.child('photos');
+              final userPhotosResult = await userPhotosRef.listAll();
+              
+              for (final photoItem in userPhotosResult.items) {
+                await _processStorageImage(
+                  photoItem,
+                  allPhotos,
+                  firestorePhotos,
+                  likesMap,
+                  currentUser,
+                  'users/${userFolder.name}/photos',
+                );
+              }
+            } catch (e) {
+              print('Error scanning users/${userFolder.name}/photos: $e');
+            }
+          }
+        }
+      } catch (e) {
+        print('Error scanning users folder: $e');
+      }
+      
+    } catch (e) {
+      print('Error scanning storage: $e');
+    }
+  }
+
+  Future<void> _tryAccessUserFolder(
+    Reference userFolder,
+    List<PhotoData> allPhotos,
+    Map<String, Map<String, dynamic>> firestorePhotos,
+    Map<String, Map<String, bool>> likesMap,
+    dynamic currentUser,
+    String basePath,
+  ) async {
+    try {
+      // Try to access common photo file extensions
+      final extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+      final userId = userFolder.name;
+      
+      for (final ext in extensions) {
+        try {
+          // Try to find photos with this extension
+          final photoRef = userFolder.child('photo.$ext');
+          await _processStorageImage(
+            photoRef,
+            allPhotos,
+            firestorePhotos,
+            likesMap,
+            currentUser,
+            '$basePath/$userId',
+          );
+        } catch (e) {
+          // Continue to next extension
+        }
+      }
+    } catch (e) {
+      print('Error accessing user folder ${userFolder.name}: $e');
+    }
+  }
+
+  Future<void> _tryAccessKnownUserFolders(
+    List<PhotoData> allPhotos,
+    Map<String, Map<String, dynamic>> firestorePhotos,
+    Map<String, Map<String, bool>> likesMap,
+    dynamic currentUser,
+  ) async {
+    // Try to access photos from known user IDs in Firestore
+    final knownUserIds = <String>{};
+    for (final entry in firestorePhotos.entries) {
+      final userId = entry.value['userId'] as String?;
+      if (userId != null) {
+        knownUserIds.add(userId);
+      }
+    }
+    
+    for (final userId in knownUserIds) {
+      try {
+        final userPhotosRef = FirebaseStorage.instance.ref().child('photos').child(userId);
+        final result = await userPhotosRef.listAll();
+        
+        for (final photoItem in result.items) {
+          await _processStorageImage(
+            photoItem,
+            allPhotos,
+            firestorePhotos,
+            likesMap,
+            currentUser,
+            'photos/$userId',
+          );
+        }
+      } catch (e) {
+        print('Error accessing known user folder $userId: $e');
+      }
+    }
+  }
+
+  Future<void> _processStorageImage(
+    Reference photoRef,
+    List<PhotoData> allPhotos,
+    Map<String, Map<String, dynamic>> firestorePhotos,
+    Map<String, Map<String, bool>> likesMap,
+    dynamic currentUser,
+    String basePath,
+  ) async {
+    try {
+      // Extract photo ID and user ID from the path
+      final pathParts = photoRef.fullPath.split('/');
+      String photoId = 'unknown'; // Initialize with default value
+      String userId = 'unknown';
+      
+      print('Processing image at path: ${photoRef.fullPath}');
+      
+      if (pathParts.length >= 2 && pathParts[0] == 'photos') {
+        if (pathParts.length == 2) {
+          // Format: photos/{photoId} (direct photo)
+          photoId = pathParts[1];
+          // Try to extract user ID from photoId if it contains a UUID or timestamp
+          if (photoId.contains('_')) {
+            final parts = photoId.split('_');
+            if (parts.length >= 2 && parts[1].length > 20) {
+              // This might be a UUID, try to find user from Firestore
+              final firestoreData = firestorePhotos[photoId];
+              userId = firestoreData?['userId'] ?? 'unknown';
+            }
+          }
+        } else if (pathParts.length >= 4) {
+          // Format: photos/{userId}/{photoId}
+          userId = pathParts[2];
+          photoId = pathParts[3];
+        }
+      } else if (pathParts.length >= 5 && pathParts[0] == 'users') {
+        // Format: users/{userId}/photos/{photoId}
+        userId = pathParts[1];
+        photoId = pathParts[4];
+      } else {
+        // Fallback: use the last part as photoId
+        photoId = pathParts.last;
+      }
+      
+      // Remove file extension from photoId
+      photoId = photoId.split('.').first;
+      
+      // Check if this photo is already added
+      if (allPhotos.any((photo) => photo.id == photoId)) {
+        print('Photo $photoId already added, skipping');
+        return;
+      }
+      
+      print('Found storage image: $photoId from user $userId at path: ${photoRef.fullPath}');
+      
+      // Get download URL
+      final downloadUrl = await photoRef.getDownloadURL();
+      
+      // Get Firestore data if available
+      final firestoreData = firestorePhotos[photoId];
+      final photoLikes = likesMap[photoId] ?? {};
+      final isLiked = currentUser != null && photoLikes[currentUser.uid] == true;
+      
+      // Extract timestamp from photoId if it's a timestamp
+      int timestamp;
+      if (RegExp(r'^\d+$').hasMatch(photoId)) {
+        timestamp = int.tryParse(photoId) ?? DateTime.now().millisecondsSinceEpoch;
+      } else {
+        timestamp = firestoreData?['timestamp'] is Timestamp 
+            ? (firestoreData!['timestamp'] as Timestamp).millisecondsSinceEpoch
+            : firestoreData?['timestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch;
+      }
+      
+      final photo = PhotoData(
+        id: photoId,
+        file: null,
+        firebaseUrl: downloadUrl,
+        title: firestoreData?['title'] ?? 'Photo',
+        comment: firestoreData?['comment'] ?? '',
+        isLiked: isLiked,
+        userId: firestoreData?['userId'] ?? userId,
+        timestamp: timestamp,
+        likesCount: photoLikes.length,
+      );
+      
+      allPhotos.add(photo);
+      print('Added storage photo: $photoId');
+      
+    } catch (e) {
+      print('Error processing storage image ${photoRef.fullPath}: $e');
     }
   }
 
@@ -173,9 +427,42 @@ class _FeedScreenState extends State<FeedScreen> {
                   ? Image.network(
                       photo.firebaseUrl!,
                       fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        print('Error loading image: $error');
+                        return Container(
+                          color: Colors.grey[300],
+                          child: const Center(
+                            child: Icon(
+                              Icons.broken_image,
+                              color: Colors.grey,
+                              size: 32,
+                            ),
+                          ),
+                        );
+                      },
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Container(
+                          color: Colors.grey[300],
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              value: loadingProgress.expectedTotalBytes != null
+                                  ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                                  : null,
+                            ),
+                          ),
+                        );
+                      },
                     )
-                  : const Center(
-                      child: Icon(Icons.image),
+                  : Container(
+                      color: Colors.grey[300],
+                      child: const Center(
+                        child: Icon(
+                          Icons.image,
+                          color: Colors.grey,
+                          size: 32,
+                        ),
+                      ),
                     ),
             ),
             // Username overlay at the top

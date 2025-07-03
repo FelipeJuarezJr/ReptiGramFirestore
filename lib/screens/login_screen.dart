@@ -106,12 +106,12 @@ class _LoginScreenState extends State<LoginScreen> {
       
       if (userDoc.exists) {
         // Update existing user document
-        await FirestoreService.updateUser(user.uid, {
-          "displayName": user.displayName,
-          "email": user.email,
-          "photoURL": user.photoURL,
-          "lastLogin": FirestoreService.serverTimestamp,
-        });
+    await FirestoreService.updateUser(user.uid, {
+      "displayName": user.displayName,
+      "email": user.email,
+      "photoURL": user.photoURL,
+      "lastLogin": FirestoreService.serverTimestamp,
+    });
         print('Updated existing user document for ${user.email}');
       } else {
         // Create new user document

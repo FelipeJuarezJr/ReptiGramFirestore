@@ -1,9 +1,9 @@
 const admin = require('firebase-admin');
 
-// Initialize the old project (reptigram-lite)
+// Initialize the old project ([OLD_PROJECT_ID])
 const oldApp = admin.initializeApp({
   credential: admin.credential.cert(require('./service-account-key-rtdb.json')),
-  projectId: 'reptigram-lite',
+  projectId: '[OLD_PROJECT_ID]',
 }, 'old');
 
 // Initialize the new project (reptigramfirestore)
@@ -17,7 +17,7 @@ const newAuth = newApp.auth();
 
 async function migrateUsersOnly() {
   try {
-    console.log('Migrating users from reptigram-lite to reptigramfirestore...');
+    console.log('Migrating users from [OLD_PROJECT_ID] to reptigramfirestore...');
     
     // Get all users from old project
     const listUsersResult = await oldAuth.listUsers();

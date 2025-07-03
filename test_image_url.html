@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Firebase Storage URL</title>
+</head>
+<body>
+    <h1>Testing Firebase Storage Image</h1>
+    <img id="testImage" src="" alt="Test Image" style="max-width: 300px;">
+    <div id="status"></div>
+    
+    <script>
+        // Test the URL from your console logs
+        const imageUrl = "https://firebasestorage.googleapis.com/v0/b/reptigramfirestore.firebasestorage.app/o/photos%2FuDRQnmQF0Qd8xOsvUFnScYqeFLg1%2F1751430433679?alt=media&token=68704495-4b88-43c4-9106-7490b888daac";
+        
+        document.getElementById('testImage').src = imageUrl;
+        
+        const img = document.getElementById('testImage');
+        const status = document.getElementById('status');
+        
+        img.onload = function() {
+            status.innerHTML = '<p style="color: green;">✅ Image loaded successfully!</p>';
+        };
+        
+        img.onerror = function() {
+            status.innerHTML = '<p style="color: red;">❌ Image failed to load</p>';
+        };
+    </script>
+</body>
+</html> 

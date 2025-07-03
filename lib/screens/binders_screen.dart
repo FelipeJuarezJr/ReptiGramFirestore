@@ -14,14 +14,17 @@ import '../screens/notebooks_screen.dart';
 import '../screens/albums_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
+import '../constants/photo_sources.dart';
 
 class BindersScreen extends StatefulWidget {
   final String binderName;
   final String? parentAlbumName;
+  final String source;
   const BindersScreen({
     super.key, 
     required this.binderName,
     this.parentAlbumName,
+    this.source = PhotoSources.binders,
   });
 
   @override
@@ -95,7 +98,7 @@ class _BindersScreenState extends State<BindersScreen> {
       // Firestore: Get photos for this binder
       final photosQuery = await FirestoreService.photos
           .where('userId', isEqualTo: currentUser.uid)
-          .where('source', isEqualTo: 'binders')
+          .where('source', isEqualTo: widget.source)
           .where('binderName', isEqualTo: widget.binderName)
           .where('albumName', isEqualTo: widget.parentAlbumName)
           .get();
@@ -323,7 +326,7 @@ class _BindersScreenState extends State<BindersScreen> {
                                   'binderName': widget.binderName,
                                   'albumName': widget.parentAlbumName,
                                   'userId': currentUser.uid,
-                                  'source': 'binders',
+                                  'source': widget.source,
                                 });
 
                                 Navigator.pop(context); // Hide loading indicator
@@ -394,6 +397,7 @@ class _BindersScreenState extends State<BindersScreen> {
               notebookName: 'My Notebook',
               parentBinderName: binderName,
               parentAlbumName: widget.parentAlbumName!,
+              source: PhotoSources.notebooks,
             ),
           ),
         );

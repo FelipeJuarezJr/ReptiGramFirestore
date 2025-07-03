@@ -40,99 +40,80 @@ class _PostScreenState extends State<PostScreen> {
 
   Future<void> _testFirestoreAccess() async {
     try {
-      print('Testing Firestore access...');
-      
       // Check if user is authenticated
       final user = FirebaseAuth.instance.currentUser;
-      print('Current user: ${user?.uid}');
-      print('User email: ${user?.email}');
-      print('User display name: ${user?.displayName}');
       
       // Test posts collection
       final postsTest = await FirestoreService.posts.limit(1).get();
-      print('Posts collection accessible: ${postsTest.docs.length} docs found');
       
       // Test users collection
       final usersTest = await FirestoreService.users.limit(1).get();
-      print('Users collection accessible: ${usersTest.docs.length} docs found');
       
       // Test comments collection
       final commentsTest = await FirestoreService.comments.limit(1).get();
-      print('Comments collection accessible: ${commentsTest.docs.length} docs found');
       
       // Test likes collection
       final likesTest = await FirestoreService.likes.limit(1).get();
-      print('Likes collection accessible: ${likesTest.docs.length} docs found');
       
     } catch (e) {
-      print('Error testing Firestore access: $e');
+      // Handle error silently
     }
   }
 
   Future<void> _loadPosts() async {
     try {
       if (!mounted) return;
-      print('Starting to load posts...');
       setState(() => _isLoading = true);
 
       final userId = FirebaseAuth.instance.currentUser?.uid;
       if (userId == null) {
-        print('No user logged in, cannot load posts');
         return;
       }
-      print('Loading posts for user: $userId');
 
       // Firestore: Get all posts ordered by timestamp
-      print('Querying posts collection...');
       try {
         // First try to get posts ordered by timestamp
         QuerySnapshot postsQuery;
         try {
           postsQuery = await FirestoreService.posts
-              .orderBy('timestamp', descending: true)
-              .get();
+          .orderBy('timestamp', descending: true)
+          .get();
         } catch (e) {
-          print('Error with timestamp ordering, trying without order: $e');
           // If timestamp ordering fails, get posts without ordering
           postsQuery = await FirestoreService.posts.get();
         }
 
         if (!mounted) return;
 
-        print('Found ${postsQuery.docs.length} posts in collection');
-        
-        if (postsQuery.docs.isEmpty) {
-          print('No posts found in collection');
-          setState(() {
-            _posts.clear();
-            _isLoading = false;
-          });
-          return;
-        }
+      if (postsQuery.docs.isEmpty) {
+        setState(() {
+          _posts.clear();
+          _isLoading = false;
+        });
+        return;
+      }
 
-        try {
+      try {
           // Get all likes and comments in batch queries
-          print('Loading all likes and comments in batch...');
           
           // Get all likes
           final likesQuery = await FirestoreService.likes.get();
           final likesMap = <String, Map<String, bool>>{};
-          for (var likeDoc in likesQuery.docs) {
-            final likeData = likeDoc.data() as Map<String, dynamic>;
+            for (var likeDoc in likesQuery.docs) {
+              final likeData = likeDoc.data() as Map<String, dynamic>;
             final postId = likeData['postId'] as String?;
-            final likeUserId = likeData['userId'] as String?;
+              final likeUserId = likeData['userId'] as String?;
             if (postId != null && likeUserId != null) {
               likesMap.putIfAbsent(postId, () => {});
               likesMap[postId]![likeUserId] = true;
             }
           }
-          print('Loaded ${likesMap.length} posts with likes');
 
           // Get all comments
           final commentsQuery = await FirestoreService.comments.get();
           final commentsMap = <String, List<CommentModel>>{};
-          for (var commentDoc in commentsQuery.docs) {
-            final commentData = commentDoc.data() as Map<String, dynamic>;
+            for (var commentDoc in commentsQuery.docs) {
+              final commentData = commentDoc.data() as Map<String, dynamic>;
             final postId = commentData['postId'] as String?;
             if (postId != null) {
               final timestamp = commentData['timestamp'] is Timestamp 
@@ -150,7 +131,6 @@ class _PostScreenState extends State<PostScreen> {
               commentsMap[postId]!.add(comment);
             }
           }
-          print('Loaded ${commentsMap.length} posts with comments');
 
           // Process posts using the batch data
           final List<PostModel> loadedPosts = [];
@@ -160,7 +140,6 @@ class _PostScreenState extends State<PostScreen> {
             if (!mounted) return;
             
             try {
-              print('Processing post: ${doc.id}');
               final data = doc.data() as Map<String, dynamic>;
               final postId = doc.id;
               
@@ -168,72 +147,60 @@ class _PostScreenState extends State<PostScreen> {
               final postLikes = likesMap[postId] ?? {};
               final isLiked = postLikes.containsKey(userId);
               final likeCount = postLikes.length;
-              print('Found $likeCount likes for post $postId, user liked: $isLiked');
 
               // Get comments for this post from batch data
               final postComments = commentsMap[postId] ?? [];
-              print('Found ${postComments.length} comments for post $postId');
 
-              // Create post model with actual timestamp
-              final postTimestamp = data['timestamp'] is Timestamp 
-                  ? (data['timestamp'] as Timestamp).toDate()
-                  : DateTime.fromMillisecondsSinceEpoch(data['timestamp'] ?? 0);
-              
-              final post = PostModel(
-                id: postId,
-                userId: data['userId'] ?? '',
+            // Create post model with actual timestamp
+            final postTimestamp = data['timestamp'] is Timestamp 
+                ? (data['timestamp'] as Timestamp).toDate()
+                : DateTime.fromMillisecondsSinceEpoch(data['timestamp'] ?? 0);
+            
+            final post = PostModel(
+              id: postId,
+              userId: data['userId'] ?? '',
                 content: data['content'] ?? '[No content]',
-                timestamp: postTimestamp,
-                isLiked: isLiked,
-                likeCount: likeCount,
+              timestamp: postTimestamp,
+              isLiked: isLiked,
+              likeCount: likeCount,
                 comments: postComments,
-              );
-              loadedPosts.add(post);
-              print('Added post to loadedPosts list. Total posts so far: ${loadedPosts.length}');
+            );
+            loadedPosts.add(post);
 
               // Collect user IDs to fetch usernames in batch
-              if (post.userId.isNotEmpty) {
+            if (post.userId.isNotEmpty) {
                 userIdsToFetch.add(post.userId);
               }
               for (var comment in postComments) {
                 if (comment.userId.isNotEmpty) {
                   userIdsToFetch.add(comment.userId);
                 }
-              }
-            } catch (e) {
-              print('Error processing individual post: $e');
             }
+          } catch (e) {
+              // Continue processing other posts if one fails
           }
+        }
 
           // Fetch all usernames in batch
-          print('Fetching usernames for ${userIdsToFetch.length} users...');
           await _fetchUsernamesBatch(userIdsToFetch);
 
-          print('Finished processing all posts. Total loaded: ${loadedPosts.length}');
           if (mounted) {
-            print('About to update state with ${loadedPosts.length} posts');
-            setState(() {
-              _posts.clear();
-              _posts.addAll(loadedPosts);
-            });
-            print('Updated state with ${_posts.length} posts');
-            print('First few posts in state:');
-            for (int i = 0; i < _posts.length && i < 5; i++) {
-              print('  Post $i: ${_posts[i].content} by ${_posts[i].userId}');
-            }
+        setState(() {
+          _posts.clear();
+          _posts.addAll(loadedPosts);
+        });
           }
         } catch (e) {
-          print('Error processing posts data: $e');
+          // Handle error silently
         }
       } catch (e) {
-        print('Error querying posts collection: $e');
+        // Handle error silently
       }
     } catch (e) {
-      print('Error loading posts: $e');
+      // Handle error silently
     } finally {
       if (mounted) {
-        setState(() => _isLoading = false);
-        print('Set loading to false');
+      setState(() => _isLoading = false);
       }
     }
   }
@@ -259,19 +226,19 @@ class _PostScreenState extends State<PostScreen> {
 
       _descriptionController.clear();
       if (mounted) {
-        await _loadPosts(); // Reload posts
+      await _loadPosts(); // Reload posts
       }
 
     } catch (e) {
       print('Error creating post: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to create post: ${e.toString()}')),
-        );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to create post: ${e.toString()}')),
+      );
       }
     } finally {
       if (mounted) {
-        setState(() => _isLoading = false);
+      setState(() => _isLoading = false);
       }
     }
   }
@@ -283,10 +250,10 @@ class _PostScreenState extends State<PostScreen> {
 
       // Optimistic update
       if (mounted) {
-        setState(() {
-          post.isLiked = !post.isLiked;
-          post.likeCount += post.isLiked ? 1 : -1;
-        });
+      setState(() {
+        post.isLiked = !post.isLiked;
+        post.likeCount += post.isLiked ? 1 : -1;
+      });
       }
 
       // Firestore: Toggle like
@@ -311,16 +278,16 @@ class _PostScreenState extends State<PostScreen> {
     } catch (e) {
       // Revert on error
       if (mounted) {
-        setState(() {
-          post.isLiked = !post.isLiked;
-          post.likeCount += post.isLiked ? 1 : -1;
-        });
+      setState(() {
+        post.isLiked = !post.isLiked;
+        post.likeCount += post.isLiked ? 1 : -1;
+      });
       }
       print('Error toggling like: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update like: ${e.toString()}')),
-        );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update like: ${e.toString()}')),
+      );
       }
     }
   }
@@ -475,17 +442,17 @@ class _PostScreenState extends State<PostScreen> {
       );
 
       if (mounted) {
-        setState(() {
-          post.comments.add(newComment);
-        });
+      setState(() {
+        post.comments.add(newComment);
+      });
       }
 
     } catch (e) {
       print('Error adding comment: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to add comment: ${e.toString()}')),
-        );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to add comment: ${e.toString()}')),
+      );
       }
     }
   }
@@ -502,9 +469,9 @@ class _PostScreenState extends State<PostScreen> {
         if (data != null) {
           final username = data['username'] ?? 'Unknown User';
           if (mounted) {
-            setState(() {
-              _usernames[userId] = username;
-            });
+          setState(() {
+            _usernames[userId] = username;
+          });
           }
         }
       }
@@ -515,26 +482,24 @@ class _PostScreenState extends State<PostScreen> {
 
   Future<void> _loadUsernames() async {
     try {
-      print('Starting to load usernames...');
       // Firestore: Get all users
       try {
-        final usersQuery = await FirestoreService.users.get();
-        print('Found ${usersQuery.docs.length} users in collection');
+      final usersQuery = await FirestoreService.users.get();
 
-        for (var doc in usersQuery.docs) {
+      for (var doc in usersQuery.docs) {
           try {
-            final data = doc.data() as Map<String, dynamic>;
-            final userId = doc.id;
-            
-            // First try to get username from the root level
-            String? username = data['username'];
-            
-            // If not found, try to get it from the profile
-            if (username == null && data['profile'] is Map) {
-              final profile = data['profile'];
-              username = profile['username'] ?? 
-                         profile['displayName'] ?? 
-                         'Unknown User';
+        final data = doc.data() as Map<String, dynamic>;
+        final userId = doc.id;
+        
+        // First try to get username from the root level
+        String? username = data['username'];
+        
+        // If not found, try to get it from the profile
+        if (username == null && data['profile'] is Map) {
+          final profile = data['profile'];
+          username = profile['username'] ?? 
+                     profile['displayName'] ?? 
+                     'Unknown User';
             }
             
             // If still not found, try displayName directly
@@ -544,27 +509,23 @@ class _PostScreenState extends State<PostScreen> {
             
             // If still not found, use Unknown User
             _usernames[userId] = username ?? 'Unknown User';
-            print('Loaded username for $userId: ${_usernames[userId]}'); // Debug print
           } catch (e) {
-            print('Error processing user document ${doc.id}: $e');
+            // Continue processing other users if one fails
           }
         }
         if (mounted) {
           setState(() {});
-          print('Updated state with ${_usernames.length} usernames');
         }
       } catch (e) {
-        print('Error querying users collection: $e');
+        // Handle error silently
       }
     } catch (e) {
-      print('Error loading usernames: $e');
+      // Handle error silently
     }
   }
 
   Future<void> _fetchUsernamesBatch(Set<String> userIds) async {
     try {
-      print('Fetching usernames for ${userIds.length} users in batch...');
-      
       // Get all users in one query
       final usersQuery = await FirestoreService.users.get();
       
@@ -587,16 +548,14 @@ class _PostScreenState extends State<PostScreen> {
           // If still not found, try displayName directly
           if (username == null) {
             username = data['displayName'] ?? 'Unknown User';
-          }
-          
-          // If still not found, use Unknown User
-          _usernames[userId] = username ?? 'Unknown User';
+        }
+        
+        // If still not found, use Unknown User
+        _usernames[userId] = username ?? 'Unknown User';
         }
       }
-      
-      print('Loaded ${_usernames.length} usernames in batch');
     } catch (e) {
-      print('Error fetching usernames in batch: $e');
+      // Handle error silently
     }
   }
 
@@ -710,129 +669,128 @@ class _PostScreenState extends State<PostScreen> {
                       ),
                     ),
                     // Posts list
-                    Expanded(
-                      child: ListView.builder(
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.all(16.0),
+                  itemCount: _posts.length,
+                  itemBuilder: (context, index) {
+                    final post = _posts[index];
+                    return Container(
+                      width: postWidth,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        gradient: AppColors.inputGradient,
+                        borderRadius: AppColors.pillShape,
+                      ),
+                      child: Padding(
                         padding: const EdgeInsets.all(16.0),
-                        itemCount: _posts.length,
-                        itemBuilder: (context, index) {
-                          final post = _posts[index];
-                          print('Rendering post $index: ${post.content} by ${post.userId}');
-                          return Container(
-                            width: postWidth,
-                            margin: const EdgeInsets.only(bottom: 16),
-                            decoration: BoxDecoration(
-                              gradient: AppColors.inputGradient,
-                              borderRadius: AppColors.pillShape,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.account_circle,
+                                  color: Colors.brown,
+                                  size: 24,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _usernames[post.userId] ?? 'Loading...',
+                                  style: const TextStyle(
+                                    color: Colors.brown,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
                             ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.account_circle,
+                            const SizedBox(height: 8),
+                            Text(
+                              post.content,
+                              style: const TextStyle(
+                                color: Colors.brown,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                IconButton(
+                                  icon: Icon(
+                                    post.isLiked ? Icons.favorite : Icons.favorite_border,
+                                    color: post.isLiked ? Colors.red : Colors.brown[400],
+                                  ),
+                                  onPressed: () => _toggleLike(post),
+                                ),
+                                Text(
+                                  '${post.likeCount} likes',
+                                  style: TextStyle(
+                                    color: Colors.brown[400],
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                IconButton(
+                                  icon: Icon(
+                                    Icons.comment_outlined,
+                                    color: Colors.brown[400],
+                                  ),
+                                  onPressed: () => _showCommentDialog(post),
+                                ),
+                                Text(
+                                  '${post.comments.length} comments',
+                                  style: TextStyle(
+                                    color: Colors.brown[400],
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Text(
+                                  _formatTimestamp(post.timestamp),
+                                  style: TextStyle(
+                                    color: Colors.brown[400],
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            // Show latest comment if exists
+                            if (post.comments.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.brown.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Latest: ${_usernames[post.comments.last.userId] ?? 'Loading...'}: ${post.comments.last.content}',
+                                      style: const TextStyle(
                                         color: Colors.brown,
-                                        size: 24,
+                                        fontSize: 14,
                                       ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        _usernames[post.userId] ?? 'Loading...',
-                                        style: const TextStyle(
-                                          color: Colors.brown,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    post.content,
-                                    style: const TextStyle(
-                                      color: Colors.brown,
-                                      fontSize: 16,
                                     ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      IconButton(
-                                        icon: Icon(
-                                          post.isLiked ? Icons.favorite : Icons.favorite_border,
-                                          color: post.isLiked ? Colors.red : Colors.brown[400],
-                                        ),
-                                        onPressed: () => _toggleLike(post),
-                                      ),
-                                      Text(
-                                        '${post.likeCount} likes',
-                                        style: TextStyle(
-                                          color: Colors.brown[400],
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 16),
-                                      IconButton(
-                                        icon: Icon(
-                                          Icons.comment_outlined,
-                                          color: Colors.brown[400],
-                                        ),
-                                        onPressed: () => _showCommentDialog(post),
-                                      ),
-                                      Text(
-                                        '${post.comments.length} comments',
-                                        style: TextStyle(
-                                          color: Colors.brown[400],
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                      const Spacer(),
-                                      Text(
-                                        _formatTimestamp(post.timestamp),
-                                        style: TextStyle(
-                                          color: Colors.brown[400],
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  // Show latest comment if exists
-                                  if (post.comments.isNotEmpty) ...[
-                                    const SizedBox(height: 8),
-                                    Container(
-                                      padding: const EdgeInsets.all(8),
-                                      decoration: BoxDecoration(
-                                        color: Colors.brown.withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Latest: ${_usernames[post.comments.last.userId] ?? 'Loading...'}: ${post.comments.last.content}',
-                                            style: const TextStyle(
-                                              color: Colors.brown,
-                                              fontSize: 14,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            _formatTimestamp(post.comments.last.timestamp),
-                                            style: TextStyle(
-                                              color: Colors.brown[400],
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      _formatTimestamp(post.comments.last.timestamp),
+                                      style: TextStyle(
+                                        color: Colors.brown[400],
+                                        fontSize: 12,
                                       ),
                                     ),
                                   ],
-                                ],
+                                ),
                               ),
-                            ),
-                          );
-                        },
+                            ],
+                          ],
+                        ),
+                      ),
+                    );
+                  },
                       ),
                     ),
                   ],

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Firebase Storage Access</title>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-storage.js"></script>
+</head>
+<body>
+    <h1>Testing Firebase Storage Access</h1>
+    <div id="status">Loading...</div>
+    
+    <script>
+        // Firebase config (you'll need to replace with your actual config)
+        const firebaseConfig = {
+            apiKey: "AIzaSyBXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+            authDomain: "reptigramfirestore.firebaseapp.com",
+            projectId: "reptigramfirestore",
+            storageBucket: "reptigramfirestore.firebasestorage.app",
+            messagingSenderId: "123456789",
+            appId: "1:123456789:web:abcdef123456"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const storage = firebase.storage();
+        
+        const status = document.getElementById('status');
+        
+        async function testStorageAccess() {
+            try {
+                status.innerHTML = '<p>Testing storage access...</p>';
+                
+                // Test if we can access the storage bucket
+                const testRef = storage.ref();
+                const result = await testRef.listAll();
+                
+                status.innerHTML = '<p style="color: green;">✅ Storage access successful!</p>';
+                status.innerHTML += '<p>Found ' + result.items.length + ' items in root</p>';
+                
+            } catch (error) {
+                status.innerHTML = '<p style="color: red;">❌ Storage access failed: ' + error.message + '</p>';
+            }
+        }
+        
+        testStorageAccess();
+    </script>
+</body>
+</html> 

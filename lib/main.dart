@@ -6,6 +6,7 @@ import 'screens/login_screen.dart';
 import 'state/app_state.dart';
 import 'state/auth_state.dart';
 import 'state/dark_mode_provider.dart';
+import 'audit_firebase_config.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,6 +19,15 @@ Future<void> main() async {
   } else {
     // Firebase is already initialized, use the existing app
     Firebase.app();
+  }
+
+  // 🔍 AUDIT: Verify Firebase configuration on startup
+  try {
+    FirebaseConfigAuditor.auditFirebaseConfig();
+    print('✅ Firebase configuration verified - connected to correct project');
+  } catch (e) {
+    print('❌ CRITICAL: Firebase configuration error: $e');
+    print('🛑 App will continue but may write to wrong project!');
   }
 
   runApp(const MyApp());

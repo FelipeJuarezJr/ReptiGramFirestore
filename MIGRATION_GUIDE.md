@@ -22,7 +22,7 @@ All files have been successfully migrated from Firebase Realtime Database to Fir
 ### 2. Firebase Configuration
 - Updated `lib/firebase_options.dart` with new Firestore project configuration
 - Removed `databaseURL` (not needed for Firestore)
-- Configured for new Firestore project: `reptigram-lite`
+- Configured for new Firestore project: `reptigramfirestore`
 
 ### 3. New Firestore Service
 Created `lib/services/firestore_service.dart` with centralized database operations:

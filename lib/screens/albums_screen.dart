@@ -8,14 +8,18 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../models/photo_data.dart';
 import '../utils/photo_utils.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
+import '../constants/photo_sources.dart';
+import 'package:http/http.dart' as http;
 
 class AlbumsScreen extends StatefulWidget {
-  const AlbumsScreen({super.key});
+  final String source;
+  const AlbumsScreen({super.key, this.source = PhotoSources.albums});
 
   @override
   State<AlbumsScreen> createState() => _AlbumsScreenState();
@@ -62,17 +66,30 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
     setState(() => _isLoading = true);
     try {
       final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
-      if (currentUser == null) return;
+      if (currentUser == null) {
+        print('❌ No user found when loading photos');
+        return;
+      }
+      
+      print('🔄 Loading photos for user: ${currentUser.uid}');
+      print('📁 Looking for source: ${widget.source}');
+      
       final query = await FirestoreService.photos
         .where('userId', isEqualTo: currentUser.uid)
-        .where('source', isEqualTo: 'albums')
+        .where('source', isEqualTo: widget.source)
         .get();
+      
+      print('📊 Found ${query.docs.length} photos in Firestore');
+      
       albumPhotos.clear();
       for (var album in albums) {
         albumPhotos[album] = [];
       }
+      
       for (var doc in query.docs) {
         final data = doc.data() as Map<String, dynamic>;
+        print('📄 Photo document: ${doc.id} - ${data.toString()}');
+        
         final photo = PhotoData(
           id: doc.id,
           file: null,
@@ -88,9 +105,11 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
           albumPhotos[albumName]!.add(photo);
         }
       }
+      
+      print('✅ Loaded ${albumPhotos.values.fold(0, (sum, photos) => sum + photos.length)} photos total');
       setState(() {});
     } catch (e) {
-      print('Error loading album photos: $e');
+      print('❌ Error loading album photos: $e');
     } finally {
       setState(() => _isLoading = false);
     }
@@ -157,19 +176,27 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                                 );
 
                                 final String photoId = DateTime.now().millisecondsSinceEpoch.toString();
+                                print('🔄 Starting upload for photo ID: $photoId');
+                                print('👤 User ID: ${currentUser.uid}');
+                                print('📁 Source: ${widget.source}');
+                                
                                 final storageRef = FirebaseStorage.instance
                                     .ref()
                                     .child('photos')
                                     .child(currentUser.uid)
                                     .child(photoId);
+                                
+                                print('📂 Storage path: photos/${currentUser.uid}/$photoId');
 
                                 if (kIsWeb) {
                                   final bytes = await pickedFile.readAsBytes();
+                                  print('📤 Uploading ${bytes.length} bytes to Storage...');
                                   await storageRef.putData(
                                     bytes,
                                     SettableMetadata(contentType: 'image/jpeg'),
                                   );
                                 } else {
+                                  print('📤 Uploading file to Storage...');
                                   await storageRef.putFile(
                                     File(pickedFile.path),
                                     SettableMetadata(contentType: 'image/jpeg'),
@@ -177,18 +204,26 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                                 }
 
                                 final downloadUrl = await storageRef.getDownloadURL();
+                                print('✅ Storage upload complete. URL: $downloadUrl');
 
                                 // Firestore: Save photo with hierarchy info
-                                await FirestoreService.photos.doc(photoId).set({
+                                print('📝 Saving to Firestore...');
+                                final firestoreData = {
                                   'url': downloadUrl,
                                   'timestamp': FieldValue.serverTimestamp(),
                                   'albumName': 'My Album',
                                   'userId': currentUser.uid,
-                                  'source': 'albums',
-                                });
+                                  'source': widget.source,
+                                };
+                                print('📄 Firestore data: $firestoreData');
+                                
+                                await FirestoreService.photos.doc(photoId).set(firestoreData);
+                                print('✅ Firestore save complete');
 
                                 Navigator.pop(context); // Hide loading indicator
+                                print('🔄 Reloading photos...');
                                 await _loadAlbumPhotos(); // Reload photos
+                                print('✅ Photo upload process complete');
 
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(content: Text('Photo uploaded successfully!')),
@@ -205,6 +240,19 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                         ],
                       ),
                       const SizedBox(height: 74),
+                      // Debug info - temporary
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        margin: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.7),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'DEBUG: Albums: ${albums.length}, Photos in My Album: ${albumPhotos['My Album']?.length ?? 0}',
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                      ),
                       // Albums Grid below
                       Expanded(
                         child: _isLoading 
@@ -218,15 +266,28 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                               ),
                               itemCount: albums.length + (albumPhotos['My Album']?.length ?? 0),  // Show both albums and photos
                               itemBuilder: (context, index) {
+                                print('🔍 Building grid item $index');
+                                print('📊 Albums length: ${albums.length}');
+                                print('📸 Photos in My Album: ${albumPhotos['My Album']?.length ?? 0}');
+                                print('📄 Album photos map: $albumPhotos');
+                                
                                 // First show albums
                                 if (index < albums.length) {
+                                  print('🏷️ Building album card for: ${albums[index]}');
                                   return _buildAlbumCard(albums[index]);
                                 } 
                                 // Then show photos
                                 else {
                                   final photoIndex = index - albums.length;
+                                  print('🖼️ Building photo card at index: $photoIndex');
+                                  if (albumPhotos['My Album'] != null && photoIndex < albumPhotos['My Album']!.length) {
                                   final photo = albumPhotos['My Album']![photoIndex];
+                                    print('📸 Photo data: ${photo.firebaseUrl}');
                                   return _buildPhotoCard(photo);
+                                  } else {
+                                    print('❌ No photo found at index $photoIndex');
+                                    return Container(); // Empty container if no photo
+                                  }
                                 }
                               },
                             ),
@@ -332,6 +393,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
             builder: (context) => BindersScreen(
               binderName: 'My Binder',
               parentAlbumName: albumName,
+              source: PhotoSources.binders,
             ),
           ),
         );
@@ -477,6 +539,10 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
   }
 
   Widget _buildPhotoCard(PhotoData photo) {
+    print('🎨 Building photo card for: ${photo.title}');
+    print('🔗 Photo URL: ${photo.firebaseUrl}');
+    print('🆔 Photo ID: ${photo.id}');
+    
     return InkWell(
       onTap: () => _showEnlargedImage(photo),
       child: Container(
@@ -495,11 +561,38 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(15),
-              child: Image.network(
-                photo.firebaseUrl!,
+              child: FutureBuilder<Uint8List?>(
+                future: _loadImageBytes(photo.firebaseUrl!),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return Container(
+                      color: Colors.grey[300],
+                      child: const Center(
+                        child: CircularProgressIndicator(),
+                      ),
+                    );
+                  }
+                  
+                  if (snapshot.hasError) {
+                    print('❌ Error loading image bytes: ${snapshot.error}');
+                    return _buildFallbackImage(photo.firebaseUrl!);
+                  }
+                  
+                  if (snapshot.hasData && snapshot.data != null) {
+                    return Image.memory(
+                      snapshot.data!,
                 fit: BoxFit.cover,
                 width: double.infinity,
                 height: double.infinity,
+                      errorBuilder: (context, error, stackTrace) {
+                        print('❌ Memory image error: $error');
+                        return _buildFallbackImage(photo.firebaseUrl!);
+                      },
+                    );
+                  }
+                  
+                  return _buildFallbackImage(photo.firebaseUrl!);
+                },
               ),
             ),
             Positioned(
@@ -554,6 +647,61 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildFallbackImage(String url) {
+    return Image.network(
+      url,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) {
+          return child;
+        }
+        return Container(
+          color: Colors.grey[300],
+          child: const Center(
+            child: CircularProgressIndicator(),
+          ),
+        );
+      },
+      errorBuilder: (context, error, stackTrace) {
+        print('❌ Network image error: $error');
+        print('🔗 Failed URL: $url');
+        return Container(
+          color: Colors.grey[300],
+          child: const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.broken_image, color: Colors.grey),
+                SizedBox(height: 8),
+                Text('Image failed to load', style: TextStyle(color: Colors.grey, fontSize: 12)),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<Uint8List?> _loadImageBytes(String url) async {
+    try {
+      print('🔄 Loading image bytes from: $url');
+      final response = await http.get(Uri.parse(url));
+      
+      if (response.statusCode == 200) {
+        print('✅ Image bytes loaded successfully: ${response.bodyBytes.length} bytes');
+        return response.bodyBytes;
+      } else {
+        print('❌ HTTP error: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      print('❌ Error loading image bytes: $e');
+      return null;
+    }
   }
 
   void _showEnlargedImage(PhotoData photo) {
@@ -743,9 +891,31 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                         panEnabled: true,
                         minScale: 0.5,
                         maxScale: 4,
-                        child: Image.network(
-                          photo.firebaseUrl!,
+                        child: FutureBuilder<Uint8List?>(
+                          future: _loadImageBytes(photo.firebaseUrl!),
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState == ConnectionState.waiting) {
+                              return const Center(child: CircularProgressIndicator());
+                            }
+                            
+                            if (snapshot.hasError) {
+                              print('❌ Enlarged error loading image bytes: ${snapshot.error}');
+                              return _buildEnlargedFallbackImage(photo.firebaseUrl!);
+                            }
+                            
+                            if (snapshot.hasData && snapshot.data != null) {
+                              return Image.memory(
+                                snapshot.data!,
                           fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) {
+                                  print('❌ Enlarged memory image error: $error');
+                                  return _buildEnlargedFallbackImage(photo.firebaseUrl!);
+                                },
+                              );
+                            }
+                            
+                            return _buildEnlargedFallbackImage(photo.firebaseUrl!);
+                          },
                         ),
                       ),
                     ),
@@ -854,6 +1024,43 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
               ),
             );
           }
+        );
+      },
+    );
+  }
+
+  Widget _buildEnlargedFallbackImage(String url) {
+    return Image.network(
+      url,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) {
+          return child;
+        }
+        return Container(
+          color: Colors.grey[300],
+          child: const Center(
+            child: CircularProgressIndicator(),
+          ),
+        );
+      },
+      errorBuilder: (context, error, stackTrace) {
+        print('❌ Network image error: $error');
+        print('🔗 Failed URL: $url');
+        return Container(
+          color: Colors.grey[300],
+          child: const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.broken_image, color: Colors.grey),
+                SizedBox(height: 8),
+                Text('Image failed to load', style: TextStyle(color: Colors.grey)),
+              ],
+            ),
+          ),
         );
       },
     );

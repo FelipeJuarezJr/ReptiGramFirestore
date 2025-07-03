@@ -14,17 +14,20 @@ import '../models/photo_data.dart';
 import '../utils/photo_utils.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
+import '../constants/photo_sources.dart';
 
 class PhotosOnlyScreen extends StatefulWidget {
   final String notebookName;
   final String parentBinderName;
   final String parentAlbumName;
+  final String source;
 
   const PhotosOnlyScreen({
     super.key,
     required this.notebookName,
     required this.parentBinderName,
     required this.parentAlbumName,
+    this.source = PhotoSources.photosOnly,
   });
 
   @override
@@ -57,7 +60,7 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
       // Firestore: Get photos for this specific notebook
       final photosQuery = await FirestoreService.photos
           .where('userId', isEqualTo: currentUser.uid)
-          .where('source', isEqualTo: 'notebooks')
+          .where('source', isEqualTo: widget.source)
           .where('notebookName', isEqualTo: widget.notebookName)
           .where('binderName', isEqualTo: widget.parentBinderName)
           .where('albumName', isEqualTo: widget.parentAlbumName)
@@ -154,7 +157,7 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
         'isLiked': newPhoto.isLiked,
         'comment': newPhoto.comment,
         'timestamp': FieldValue.serverTimestamp(),
-        'source': 'notebooks',
+        'source': widget.source,
         'notebookName': widget.notebookName,
         'binderName': widget.parentBinderName,
         'albumName': widget.parentAlbumName,

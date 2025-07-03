@@ -1,9 +1,9 @@
 {
   "project_info": {
     "project_number": "1023144692222",
-    "firebase_url": "https://reptigram-lite-default-rtdb.firebaseio.com",
-    "project_id": "reptigram-lite",
-    "storage_bucket": "reptigram-lite.firebasestorage.app"
+    "firebase_url": "https://reptigramfirestore-default-rtdb.firebaseio.com",
+    "project_id": "reptigramfirestore",
+    "storage_bucket": "reptigramfirestore.firebasestorage.app"
   },
   "client": [
     {
