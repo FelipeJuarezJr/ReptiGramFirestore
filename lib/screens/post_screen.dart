@@ -650,26 +650,6 @@ class _PostScreenState extends State<PostScreen> {
 
               // Scrollable Posts List
               Expanded(
-                child: Column(
-                  children: [
-                    // Debug info
-                    Container(
-                      padding: const EdgeInsets.all(8.0),
-                      margin: const EdgeInsets.all(8.0),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'DEBUG: ${_posts.length} posts loaded | ${_usernames.length} usernames loaded',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                    // Posts list
-              Expanded(
                 child: ListView.builder(
                   padding: const EdgeInsets.all(16.0),
                   itemCount: _posts.length,
@@ -791,9 +771,6 @@ class _PostScreenState extends State<PostScreen> {
                       ),
                     );
                   },
-                      ),
-                    ),
-                  ],
                 ),
               ),
             ],

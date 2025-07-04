@@ -240,19 +240,6 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                         ],
                       ),
                       const SizedBox(height: 74),
-                      // Debug info - temporary
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        margin: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.7),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          'DEBUG: Albums: ${albums.length}, Photos in My Album: ${albumPhotos['My Album']?.length ?? 0}',
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
-                        ),
-                      ),
                       // Albums Grid below
                       Expanded(
                         child: _isLoading 
