@@ -20,8 +20,8 @@ dependencies:
   firebase_analytics: ^11.0.0
   google_sign_in: ^7.0.0
   flutter_svg: ^2.0.9
-  image_picker: ^0.8.7
-  cached_network_image: ^3.2.3
+  image_picker: ^1.0.4
+  cached_network_image: ^3.3.0
   provider: ^6.1.1
   http: ^1.1.0
 
