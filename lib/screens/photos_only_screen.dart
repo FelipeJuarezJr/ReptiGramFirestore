@@ -37,6 +37,7 @@ class PhotosOnlyScreen extends StatefulWidget {
 class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
   final ImagePicker _picker = ImagePicker();
   final FirebaseStorage _storage = FirebaseStorage.instance;
+  final Map<String, ValueNotifier<bool>> _likeNotifiers = {};
 
   @override
   void initState() {
@@ -96,6 +97,9 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
           isLiked: isLiked,
           likesCount: photoLikes.length,
         );
+        
+        // Create a ValueNotifier for this photo's like status
+        _likeNotifiers[photo.id] = ValueNotifier<bool>(isLiked);
         photos.add(photo);
       }
 
@@ -294,7 +298,7 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
                           const SizedBox(height: 20),
                           // Photos Grid
                           Expanded(
-                            child: appState.isLoading
+                            child: appState.isLoading && appState.photos.isEmpty
                                 ? const Center(child: CircularProgressIndicator())
                                 : appState.photos.isEmpty
                                     ? const Center(
@@ -442,18 +446,25 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
                 ),
                 child: InkWell(
                   onTap: () async {
-                    // Toggle like immediately
-                    setState(() {
-                      photo.isLiked = !photo.isLiked;
-                    });
+                    // Toggle like immediately using ValueNotifier
+                    final notifier = _likeNotifiers[photo.id];
+                    if (notifier != null) {
+                      notifier.value = !notifier.value;
+                      photo.isLiked = notifier.value;
+                    }
                     
-                    // Save like to Firestore immediately
+                    // Save like to Firestore
                     await _toggleLike(photo);
                   },
-                  child: Icon(
-                    photo.isLiked ? Icons.favorite : Icons.favorite_border,
-                    color: photo.isLiked ? Colors.red : Colors.white,
-                    size: 20,
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: _likeNotifiers[photo.id] ?? ValueNotifier<bool>(photo.isLiked),
+                    builder: (context, isLiked, child) {
+                      return Icon(
+                        isLiked ? Icons.favorite : Icons.favorite_border,
+                        color: isLiked ? Colors.red : Colors.white,
+                        size: 20,
+                      );
+                    },
                   ),
                 ),
               ),

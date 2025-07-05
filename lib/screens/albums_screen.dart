@@ -31,6 +31,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
   final ImagePicker _picker = ImagePicker();
   Map<String, List<PhotoData>> albumPhotos = {};
   bool _isLoading = false;
+  final Map<String, ValueNotifier<bool>> _likeNotifiers = {};
 
   @override
   void initState() {
@@ -117,6 +118,9 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
           isLiked: isLiked,
           likesCount: photoLikes.length,
         );
+        
+        // Create a ValueNotifier for this photo's like status
+        _likeNotifiers[photo.id] = ValueNotifier<bool>(isLiked);
         final albumName = data['albumName'] ?? 'My Album';
         if (albumPhotos.containsKey(albumName)) {
           albumPhotos[albumName]!.add(photo);
@@ -259,7 +263,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                       const SizedBox(height: 74),
                       // Albums Grid below
                       Expanded(
-                        child: _isLoading 
+                        child: _isLoading && albumPhotos.isEmpty
                           ? const Center(child: CircularProgressIndicator())
                           : GridView.builder(
                               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -569,12 +573,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                 future: _loadImageBytes(photo.firebaseUrl!),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return Container(
-                      color: Colors.grey[300],
-                      child: const Center(
-                        child: CircularProgressIndicator(),
-                      ),
-                    );
+                    return Container();
                   }
                   
                   if (snapshot.hasError) {
@@ -642,18 +641,25 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                 ),
                 child: InkWell(
                   onTap: () async {
-                    // Toggle like immediately
-                    setState(() {
-                      photo.isLiked = !photo.isLiked;
-                    });
+                    // Toggle like immediately using ValueNotifier
+                    final notifier = _likeNotifiers[photo.id];
+                    if (notifier != null) {
+                      notifier.value = !notifier.value;
+                      photo.isLiked = notifier.value;
+                    }
                     
-                    // Save like to Firestore immediately
+                    // Save like to Firestore
                     await _toggleLike(photo);
                   },
-                  child: Icon(
-                    photo.isLiked ? Icons.favorite : Icons.favorite_border,
-                    color: photo.isLiked ? Colors.red : Colors.white,
-                    size: 20,
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: _likeNotifiers[photo.id] ?? ValueNotifier<bool>(photo.isLiked),
+                    builder: (context, isLiked, child) {
+                      return Icon(
+                        isLiked ? Icons.favorite : Icons.favorite_border,
+                        color: isLiked ? Colors.red : Colors.white,
+                        size: 20,
+                      );
+                    },
                   ),
                 ),
               ),
@@ -676,9 +682,6 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
         }
         return Container(
           color: Colors.grey[300],
-          child: const Center(
-            child: CircularProgressIndicator(),
-          ),
         );
       },
       errorBuilder: (context, error, stackTrace) {
@@ -906,30 +909,30 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                         panEnabled: true,
                         minScale: 0.5,
                         maxScale: 4,
-                        child: FutureBuilder<Uint8List?>(
-                          future: _loadImageBytes(photo.firebaseUrl!),
-                          builder: (context, snapshot) {
-                            if (snapshot.connectionState == ConnectionState.waiting) {
-                              return const Center(child: CircularProgressIndicator());
-                            }
-                            
-                            if (snapshot.hasError) {
-                              print('❌ Enlarged error loading image bytes: ${snapshot.error}');
-                              return _buildEnlargedFallbackImage(photo.firebaseUrl!);
-                            }
-                            
-                            if (snapshot.hasData && snapshot.data != null) {
-                              return Image.memory(
-                                snapshot.data!,
+                        child: Image.network(
+                          photo.firebaseUrl!,
                           fit: BoxFit.contain,
-                                errorBuilder: (context, error, stackTrace) {
-                                  print('❌ Enlarged memory image error: $error');
-                                  return _buildEnlargedFallbackImage(photo.firebaseUrl!);
-                                },
-                              );
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) {
+                              return child;
                             }
-                            
-                            return _buildEnlargedFallbackImage(photo.firebaseUrl!);
+                            return child; // Show the image immediately, no loading state
+                          },
+                          errorBuilder: (context, error, stackTrace) {
+                            print('❌ Enlarged network image error: $error');
+                            return Container(
+                              color: Colors.grey[300],
+                              child: const Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.broken_image, color: Colors.grey),
+                                    SizedBox(height: 8),
+                                    Text('Image failed to load', style: TextStyle(color: Colors.grey)),
+                                  ],
+                                ),
+                              ),
+                            );
                           },
                         ),
                       ),
@@ -1067,9 +1070,6 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
         }
         return Container(
           color: Colors.grey[300],
-          child: const Center(
-            child: CircularProgressIndicator(),
-          ),
         );
       },
       errorBuilder: (context, error, stackTrace) {

@@ -39,6 +39,7 @@ class _BindersScreenState extends State<BindersScreen> {
   final ImagePicker _picker = ImagePicker();
   Map<String, List<PhotoData>> binderPhotos = {};
   bool _isLoading = false;
+  final Map<String, ValueNotifier<bool>> _likeNotifiers = {};
 
   @override
   void initState() {
@@ -138,6 +139,9 @@ class _BindersScreenState extends State<BindersScreen> {
           isLiked: isLiked,
           likesCount: photoLikes.length,
         );
+        
+        // Create a ValueNotifier for this photo's like status
+        _likeNotifiers[photo.id] = ValueNotifier<bool>(isLiked);
         
         final binderName = data['binderName'] ?? 'My Binder';
         if (binderPhotos.containsKey(binderName)) {
@@ -372,7 +376,7 @@ class _BindersScreenState extends State<BindersScreen> {
                       const SizedBox(height: 74),
                       // Binders and Photos Grid
                       Expanded(
-                        child: _isLoading 
+                        child: _isLoading && binderPhotos.isEmpty
                           ? const Center(child: CircularProgressIndicator())
                           : GridView.builder(
                               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -463,6 +467,14 @@ class _BindersScreenState extends State<BindersScreen> {
                                   child: const Icon(Icons.broken_image, color: Colors.grey),
                                 );
                               },
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) {
+                                  return child;
+                                }
+                                return Container(
+                                  color: Colors.grey[300],
+                                );
+                              },
                             ),
                           ),
                         // Three smaller images below
@@ -480,6 +492,14 @@ class _BindersScreenState extends State<BindersScreen> {
                                         return Container(
                                           color: Colors.grey[300],
                                           child: const Icon(Icons.broken_image, color: Colors.grey),
+                                        );
+                                      },
+                                      loadingBuilder: (context, child, loadingProgress) {
+                                        if (loadingProgress == null) {
+                                          return child;
+                                        }
+                                        return Container(
+                                          color: Colors.grey[300],
                                         );
                                       },
                                     ),
@@ -614,16 +634,11 @@ class _BindersScreenState extends State<BindersScreen> {
                   );
                 },
                 loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
+                  if (loadingProgress == null) {
+                    return child;
+                  }
                   return Container(
                     color: Colors.grey[300],
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        value: loadingProgress.expectedTotalBytes != null
-                            ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                            : null,
-                      ),
-                    ),
                   );
                 },
               ),
@@ -673,18 +688,25 @@ class _BindersScreenState extends State<BindersScreen> {
                 ),
                 child: InkWell(
                   onTap: () async {
-                    // Toggle like immediately
-                    setState(() {
-                      photo.isLiked = !photo.isLiked;
-                    });
+                    // Toggle like immediately using ValueNotifier
+                    final notifier = _likeNotifiers[photo.id];
+                    if (notifier != null) {
+                      notifier.value = !notifier.value;
+                      photo.isLiked = notifier.value;
+                    }
                     
-                    // Save like to Firestore immediately
+                    // Save like to Firestore
                     await _toggleLike(photo);
                   },
-                  child: Icon(
-                    photo.isLiked ? Icons.favorite : Icons.favorite_border,
-                    color: photo.isLiked ? Colors.red : Colors.white,
-                    size: 20,
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: _likeNotifiers[photo.id] ?? ValueNotifier<bool>(photo.isLiked),
+                    builder: (context, isLiked, child) {
+                      return Icon(
+                        isLiked ? Icons.favorite : Icons.favorite_border,
+                        color: isLiked ? Colors.red : Colors.white,
+                        size: 20,
+                      );
+                    },
                   ),
                 ),
               ),
@@ -1041,16 +1063,11 @@ class _BindersScreenState extends State<BindersScreen> {
         );
       },
       loadingBuilder: (context, child, loadingProgress) {
-        if (loadingProgress == null) return child;
+        if (loadingProgress == null) {
+          return child;
+        }
         return Container(
           color: Colors.grey[300],
-          child: Center(
-            child: CircularProgressIndicator(
-              value: loadingProgress.expectedTotalBytes != null
-                  ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                  : null,
-            ),
-          ),
         );
       },
     );
