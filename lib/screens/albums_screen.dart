@@ -16,6 +16,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
 import '../constants/photo_sources.dart';
 import 'package:http/http.dart' as http;
+import 'package:firebase_auth/firebase_auth.dart';
 
 class AlbumsScreen extends StatefulWidget {
   final String source;
@@ -74,6 +75,19 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
       print('🔄 Loading photos for user: ${currentUser.uid}');
       print('📁 Looking for source: ${widget.source}');
       
+      // Get all likes from Firestore
+      final likesQuery = await FirestoreService.likes.get();
+      final likesMap = <String, Map<String, bool>>{};
+      for (var doc in likesQuery.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final photoId = data['photoId'] as String?;
+        final userId = data['userId'] as String?;
+        if (photoId != null && userId != null) {
+          likesMap[photoId] ??= {};
+          likesMap[photoId]![userId] = true;
+        }
+      }
+      
       final query = await FirestoreService.photos
         .where('userId', isEqualTo: currentUser.uid)
         .where('source', isEqualTo: widget.source)
@@ -90,6 +104,9 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
         final data = doc.data() as Map<String, dynamic>;
         print('📄 Photo document: ${doc.id} - ${data.toString()}');
         
+        final photoLikes = likesMap[doc.id] ?? {};
+        final isLiked = currentUser != null && photoLikes[currentUser.uid] == true;
+        
         final photo = PhotoData(
           id: doc.id,
           file: null,
@@ -97,8 +114,8 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
           title: data['title'] ?? 'Photo Details',
           comment: data['comment'] ?? '',
           userId: currentUser.uid,
-          isLiked: false,
-          likesCount: 0,
+          isLiked: isLiked,
+          likesCount: photoLikes.length,
         );
         final albumName = data['albumName'] ?? 'My Album';
         if (albumPhotos.containsKey(albumName)) {
@@ -623,10 +640,21 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                   color: Colors.black.withOpacity(0.5),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(
-                  photo.isLiked ? Icons.favorite : Icons.favorite_border,
-                  color: photo.isLiked ? Colors.red : Colors.white,
-                  size: 20,
+                child: InkWell(
+                  onTap: () async {
+                    // Toggle like immediately
+                    setState(() {
+                      photo.isLiked = !photo.isLiked;
+                    });
+                    
+                    // Save like to Firestore immediately
+                    await _toggleLike(photo);
+                  },
+                  child: Icon(
+                    photo.isLiked ? Icons.favorite : Icons.favorite_border,
+                    color: photo.isLiked ? Colors.red : Colors.white,
+                    size: 20,
+                  ),
                 ),
               ),
             ),
@@ -958,13 +986,24 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                                   color: isLiked ? Colors.red : Colors.white,
                                   size: 28,
                                 ),
-                                onPressed: () {
+                                onPressed: () async {
+                                  // Toggle like immediately
                                   setState(() {
                                     isLiked = !isLiked;
-                                    hasUnsavedChanges = photoTitle != originalTitle || 
-                                                      comment != originalComment ||
-                                                      isLiked != originalIsLiked;
                                   });
+                                  
+                                  // Update the photo object immediately
+                                  photo.isLiked = isLiked;
+                                  
+                                  // Save like to Firestore immediately
+                                  await _toggleLike(photo);
+                                  
+                                  // Update main grid view to reflect the change
+                                  this.setState(() {});
+                                  
+                                  // Update hasUnsavedChanges for other fields
+                                  hasUnsavedChanges = photoTitle != originalTitle || 
+                                                    comment != originalComment;
                                 },
                               ),
                             ],
@@ -1051,6 +1090,45 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
         );
       },
     );
+  }
+
+  Future<void> _toggleLike(PhotoData photo) async {
+    try {
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      if (userId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please log in to like photos')),
+        );
+        return;
+      }
+
+      // Firestore: Toggle like
+      if (photo.isLiked) {
+        await FirestoreService.likes.add({
+          'photoId': photo.id,
+          'userId': userId,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+      } else {
+        // Find and delete the like document
+        final likeQuery = await FirestoreService.likes
+            .where('photoId', isEqualTo: photo.id)
+            .where('userId', isEqualTo: userId)
+            .get();
+        
+        for (var doc in likeQuery.docs) {
+          await doc.reference.delete();
+        }
+      }
+
+    } catch (e) {
+      print('Error toggling like: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update like: ${e.toString()}')),
+        );
+      }
+    }
   }
 
   Future<void> _savePhotoChanges(PhotoData photo) async {

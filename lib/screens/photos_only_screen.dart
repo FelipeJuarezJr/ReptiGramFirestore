@@ -57,6 +57,19 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) return;
 
+      // Get all likes from Firestore
+      final likesQuery = await FirestoreService.likes.get();
+      final likesMap = <String, Map<String, bool>>{};
+      for (var doc in likesQuery.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final photoId = data['photoId'] as String?;
+        final userId = data['userId'] as String?;
+        if (photoId != null && userId != null) {
+          likesMap[photoId] ??= {};
+          likesMap[photoId]![userId] = true;
+        }
+      }
+
       // Firestore: Get photos for this specific notebook
       final photosQuery = await FirestoreService.photos
           .where('userId', isEqualTo: currentUser.uid)
@@ -70,6 +83,9 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
 
       for (var doc in photosQuery.docs) {
         final data = doc.data() as Map<String, dynamic>;
+        final photoLikes = likesMap[doc.id] ?? {};
+        final isLiked = currentUser != null && photoLikes[currentUser.uid] == true;
+        
         final photo = PhotoData(
           id: doc.id,
           file: null,
@@ -77,8 +93,8 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
           title: data['title'] ?? 'Photo Details',
           comment: data['comment'] ?? '',
           userId: currentUser.uid,
-          isLiked: data['isLiked'] ?? false,
-          likesCount: 0,
+          isLiked: isLiked,
+          likesCount: photoLikes.length,
         );
         photos.add(photo);
       }
@@ -424,10 +440,21 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
                   color: Colors.black.withOpacity(0.5),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(
-                  photo.isLiked ? Icons.favorite : Icons.favorite_border,
-                  color: photo.isLiked ? Colors.red : Colors.white,
-                  size: 20,
+                child: InkWell(
+                  onTap: () async {
+                    // Toggle like immediately
+                    setState(() {
+                      photo.isLiked = !photo.isLiked;
+                    });
+                    
+                    // Save like to Firestore immediately
+                    await _toggleLike(photo);
+                  },
+                  child: Icon(
+                    photo.isLiked ? Icons.favorite : Icons.favorite_border,
+                    color: photo.isLiked ? Colors.red : Colors.white,
+                    size: 20,
+                  ),
                 ),
               ),
             ),
@@ -680,14 +707,24 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
                                   color: isLiked ? Colors.red : Colors.white,
                                   size: 28,
                                 ),
-                                onPressed: () {
+                                onPressed: () async {
+                                  // Toggle like immediately
                                   setState(() {
                                     isLiked = !isLiked;
-                                    // Update hasUnsavedChanges to include like status
-                                    hasUnsavedChanges = photoTitle != originalTitle || 
-                                                      comment != originalComment ||
-                                                      isLiked != originalIsLiked;
                                   });
+                                  
+                                  // Update the photo object immediately
+                                  photo.isLiked = isLiked;
+                                  
+                                  // Save like to Firestore immediately
+                                  await _toggleLike(photo);
+                                  
+                                  // Update main grid view to reflect the change
+                                  this.setState(() {});
+                                  
+                                  // Update hasUnsavedChanges for other fields
+                                  hasUnsavedChanges = photoTitle != originalTitle || 
+                                                    comment != originalComment;
                                 },
                               ),
                             ],
@@ -738,6 +775,45 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
         );
       },
     );
+  }
+
+  Future<void> _toggleLike(PhotoData photo) async {
+    try {
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      if (userId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please log in to like photos')),
+        );
+        return;
+      }
+
+      // Firestore: Toggle like
+      if (photo.isLiked) {
+        await FirestoreService.likes.add({
+          'photoId': photo.id,
+          'userId': userId,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+      } else {
+        // Find and delete the like document
+        final likeQuery = await FirestoreService.likes
+            .where('photoId', isEqualTo: photo.id)
+            .where('userId', isEqualTo: userId)
+            .get();
+        
+        for (var doc in likeQuery.docs) {
+          await doc.reference.delete();
+        }
+      }
+
+    } catch (e) {
+      print('Error toggling like: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update like: ${e.toString()}')),
+        );
+      }
+    }
   }
 
   Future<void> _savePhotoChanges(PhotoData photo) async {

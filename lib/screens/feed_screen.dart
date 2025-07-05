@@ -580,6 +580,13 @@ class _FeedScreenState extends State<FeedScreen> {
         }
       }
 
+      // If we're in "Liked Only" view and the photo was unliked, remove it from the list
+      if (widget.showLikedOnly && !photo.isLiked) {
+        setState(() {
+          _photos.removeWhere((p) => p.id == photo.id);
+        });
+      }
+
     } catch (e) {
       // Revert on error
       setState(() {
