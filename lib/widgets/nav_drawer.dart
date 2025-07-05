@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:provider/provider.dart';
 import '../styles/colors.dart';
 import '../screens/login_screen.dart';
 import '../screens/settings_screen.dart';
+import '../state/app_state.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data';
 import 'package:url_launcher/url_launcher.dart';
@@ -124,6 +126,14 @@ class _NavDrawerState extends State<NavDrawer> {
 
   @override
   Widget build(BuildContext context) {
+    final appState = Provider.of<AppState>(context);
+    final user = FirebaseAuth.instance.currentUser;
+    
+    // Get username from AppState, fallback to prop, then to displayName
+    final String displayUsername = user?.uid != null 
+        ? (appState.getUsernameById(user!.uid) ?? widget.userName ?? user.displayName ?? 'User')
+        : (widget.userName ?? user?.displayName ?? 'User');
+    
     return Drawer(
       child: ListView(
         padding: EdgeInsets.zero,
@@ -210,7 +220,7 @@ class _NavDrawerState extends State<NavDrawer> {
                     Align(
                       alignment: Alignment.centerRight,
                       child: Text(
-                        widget.userName ?? 'User',
+                        displayUsername,
                         style: const TextStyle(
                           color: AppColors.titleText,
                           fontSize: 18,

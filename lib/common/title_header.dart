@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../styles/colors.dart';
 import '../screens/login_screen.dart';
 import '../widgets/nav_drawer.dart';
+import '../state/app_state.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class TitleHeader extends StatelessWidget {
@@ -10,6 +12,7 @@ class TitleHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
+    final appState = Provider.of<AppState>(context);
 
     return Padding(
       padding: const EdgeInsets.only(top: 16.0),
@@ -47,7 +50,7 @@ class TitleHeader extends StatelessWidget {
                           width: MediaQuery.of(context).size.width * 0.7,
                           child: NavDrawer(
                             userEmail: user?.email,
-                            userName: user?.displayName,
+                            userName: user?.displayName ?? 'User', // Fallback, NavDrawer will use AppState
                             userPhotoUrl: user?.photoURL,
                           ),
                         ),

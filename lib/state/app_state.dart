@@ -68,6 +68,11 @@ class AppState extends ChangeNotifier {
     return _usernames[userId];
   }
 
+  void updateUsername(String userId, String newUsername) {
+    _usernames[userId] = newUsername;
+    notifyListeners();
+  }
+
   // Photo management
   void setPhotos(List<PhotoData> photos) {
     _photos = photos;

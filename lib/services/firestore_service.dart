@@ -202,4 +202,22 @@ class FirestoreService {
     
     await batch.commit();
   }
+
+  // Update username in batch operation
+  static Future<void> updateUsername(String userId, String oldUsername, String newUsername) async {
+    final batch = _firestore.batch();
+    
+    // Update user document
+    batch.update(users.doc(userId), {'username': newUsername});
+    
+    // Remove old username reservation
+    if (oldUsername.isNotEmpty) {
+      batch.delete(usernames.doc(oldUsername.toLowerCase()));
+    }
+    
+    // Add new username reservation
+    batch.set(usernames.doc(newUsername.toLowerCase()), {'uid': userId});
+    
+    await batch.commit();
+  }
 } 

@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../state/dark_mode_provider.dart';
+import '../state/app_state.dart';
+import '../services/firestore_service.dart';
+import '../utils/validation_utils.dart';
 import '../styles/colors.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -67,11 +70,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         const SizedBox(height: 16),
                       ],
 
-                      // Password Management Section (only for email/password users)
-                      if (!isGoogleUser && user != null) ...[
-                        _buildSectionHeader('Password Management'),
-                        _buildPasswordTile('Change Password', Icons.lock, () => _showChangePasswordDialog()),
-                        _buildPasswordTile('Reset Password', Icons.lock_reset, () => _showResetPasswordDialog()),
+                      // Account Management Section
+                      if (user != null) ...[
+                        _buildSectionHeader('Account Management'),
+                        _buildSettingTile(
+                          'Change Username',
+                          Icons.person,
+                          onTap: () => _showChangeUsernameDialog(),
+                        ),
+                        if (!isGoogleUser) ...[
+                          _buildPasswordTile('Change Password', Icons.lock, () => _showChangePasswordDialog()),
+                          _buildPasswordTile('Reset Password', Icons.lock_reset, () => _showResetPasswordDialog()),
+                        ],
                         const SizedBox(height: 16),
                       ],
 
@@ -134,6 +144,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildUserInfoTile(User user) {
+    final appState = Provider.of<AppState>(context);
+    
     return Container(
       padding: const EdgeInsets.all(16.0),
       decoration: BoxDecoration(
@@ -169,6 +181,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         fontSize: 14,
                         color: Colors.brown,
                       ),
+                    ),
+                    FutureBuilder<String?>(
+                      future: appState.fetchUsername(user.uid),
+                      builder: (context, snapshot) {
+                        if (snapshot.hasData && snapshot.data != null && snapshot.data != 'Unknown User') {
+                          return Text(
+                            'Username: ${snapshot.data}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
                     ),
                     Text(
                       'Provider: ${user.providerData.first.providerId}',
@@ -208,6 +235,93 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       trailing: trailing ?? (onTap != null ? const Icon(Icons.arrow_forward_ios, color: Colors.brown, size: 16) : null),
       onTap: onTap,
+    );
+  }
+
+  void _showChangeUsernameDialog() async {
+    final newUsernameController = TextEditingController();
+    final currentUser = _auth.currentUser;
+    
+    if (currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No user logged in')),
+      );
+      return;
+    }
+
+    // Get current username from app state
+    final appState = Provider.of<AppState>(context, listen: false);
+    String currentUsername = '';
+    
+    // Try to get current username
+    final username = await appState.fetchUsername(currentUser.uid);
+    if (username != null && username != 'Unknown User') {
+      currentUsername = username;
+      newUsernameController.text = username;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: AppColors.pillShape),
+        title: const Text('Change Username', style: TextStyle(color: Colors.brown)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Current username: ${currentUsername.isNotEmpty ? currentUsername : 'Loading...'}',
+              style: const TextStyle(color: Colors.grey, fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: newUsernameController,
+              decoration: const InputDecoration(
+                labelText: 'New Username',
+                border: OutlineInputBorder(),
+                hintText: 'Enter new username',
+              ),
+              onChanged: (value) {
+                // Real-time validation
+                final error = ValidationUtils.getUsernameError(value);
+                if (error != null) {
+                  // You could show error text here
+                }
+              },
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Username must be 3-20 characters, alphanumeric and underscore only',
+              style: TextStyle(color: Colors.grey, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.brown)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final newUsername = newUsernameController.text.trim();
+              
+              // Validate username
+              final error = ValidationUtils.getUsernameError(newUsername);
+              if (error != null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(error)),
+                );
+                return;
+              }
+
+              Navigator.pop(context);
+              await _changeUsername(newUsername);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.brown),
+            child: const Text('Change Username', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -302,6 +416,70 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _changeUsername(String newUsername) async {
+    setState(() => _isLoading = true);
+
+    try {
+      final user = _auth.currentUser;
+      if (user == null) throw Exception('No user logged in');
+
+      // Check if username is available
+      final isAvailable = await FirestoreService.isUsernameAvailable(newUsername);
+      if (!isAvailable) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Username is already taken')),
+        );
+        return;
+      }
+
+      // Get current username to remove from usernames collection
+      final appState = Provider.of<AppState>(context, listen: false);
+      final currentUsername = await appState.getUsernameById(user.uid);
+
+      // Update Firebase Auth displayName
+      await user.updateDisplayName(newUsername);
+
+      // Update Firestore user document and usernames collection in batch
+      await FirestoreService.updateUsername(user.uid, currentUsername ?? '', newUsername);
+
+      // Update app state
+      appState.updateUsername(user.uid, newUsername);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Username changed successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        
+        // Refresh the UI
+        setState(() {});
+      }
+    } on FirebaseAuthException catch (e) {
+      String message = 'Failed to change username';
+      if (e.code == 'requires-recent-login') {
+        message = 'Please log in again to change your username';
+      } else {
+        message = 'Error: ${e.message}';
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: ${e.toString()}')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _changePassword(String currentPassword, String newPassword, String confirmPassword) async {

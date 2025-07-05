@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../styles/colors.dart';
 import '../common/header.dart';
 import '../common/title_header.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/post_model.dart';
 import '../models/comment_model.dart';
+import '../state/app_state.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
@@ -294,6 +296,7 @@ class _PostScreenState extends State<PostScreen> {
 
   void _showCommentDialog(PostModel post) {
     final commentController = TextEditingController();
+    final appState = Provider.of<AppState>(context, listen: false);
 
     showDialog(
       context: context,
@@ -355,22 +358,27 @@ class _PostScreenState extends State<PostScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              RichText(
-                                text: TextSpan(
-                                  children: [
-                                    TextSpan(
-                                      text: '${_usernames[comment.userId] ?? 'Loading...'}: ',
-                                      style: const TextStyle(
-                                        color: Colors.brown,
-                                        fontWeight: FontWeight.bold,
-                                      ),
+                              FutureBuilder<String?>(
+                                future: appState.fetchUsername(comment.userId),
+                                builder: (context, snapshot) {
+                                  return RichText(
+                                    text: TextSpan(
+                                      children: [
+                                        TextSpan(
+                                          text: '${snapshot.data ?? 'Loading...'}: ',
+                                          style: const TextStyle(
+                                            color: Colors.brown,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        TextSpan(
+                                          text: comment.content,
+                                          style: const TextStyle(color: Colors.brown),
+                                        ),
+                                      ],
                                     ),
-                                    TextSpan(
-                                      text: comment.content,
-                                      style: const TextStyle(color: Colors.brown),
-                                    ),
-                                  ],
-                                ),
+                                  );
+                                },
                               ),
                               const SizedBox(height: 2),
                               Text(
@@ -561,6 +569,7 @@ class _PostScreenState extends State<PostScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final appState = Provider.of<AppState>(context);
     final screenWidth = MediaQuery.of(context).size.width;
     final postWidth = screenWidth - 32;
 
@@ -675,13 +684,18 @@ class _PostScreenState extends State<PostScreen> {
                                   size: 24,
                                 ),
                                 const SizedBox(width: 8),
-                                Text(
-                                  _usernames[post.userId] ?? 'Loading...',
-                                  style: const TextStyle(
-                                    color: Colors.brown,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
+                                FutureBuilder<String?>(
+                                  future: appState.fetchUsername(post.userId),
+                                  builder: (context, snapshot) {
+                                    return Text(
+                                      snapshot.data ?? 'Loading...',
+                                      style: const TextStyle(
+                                        color: Colors.brown,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    );
+                                  },
                                 ),
                               ],
                             ),
@@ -747,12 +761,17 @@ class _PostScreenState extends State<PostScreen> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      'Latest: ${_usernames[post.comments.last.userId] ?? 'Loading...'}: ${post.comments.last.content}',
-                                      style: const TextStyle(
-                                        color: Colors.brown,
-                                        fontSize: 14,
-                                      ),
+                                    FutureBuilder<String?>(
+                                      future: appState.fetchUsername(post.comments.last.userId),
+                                      builder: (context, snapshot) {
+                                        return Text(
+                                          'Latest: ${snapshot.data ?? 'Loading...'}: ${post.comments.last.content}',
+                                          style: const TextStyle(
+                                            color: Colors.brown,
+                                            fontSize: 14,
+                                          ),
+                                        );
+                                      },
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
