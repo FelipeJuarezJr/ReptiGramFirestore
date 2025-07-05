@@ -7,6 +7,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../models/photo_data.dart';
 import '../utils/photo_utils.dart';
@@ -15,6 +16,7 @@ import '../screens/albums_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
 import '../constants/photo_sources.dart';
+import 'package:http/http.dart' as http;
 
 class BindersScreen extends StatefulWidget {
   final String binderName;
@@ -95,16 +97,17 @@ class _BindersScreenState extends State<BindersScreen> {
       final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
       if (currentUser == null) return;
 
-      // Firestore: Get photos for this binder
+      // Firestore: Get photos for all binders in this album
       final photosQuery = await FirestoreService.photos
           .where('userId', isEqualTo: currentUser.uid)
-          .where('source', isEqualTo: widget.source)
-          .where('binderName', isEqualTo: widget.binderName)
+          .where('source', isEqualTo: PhotoSources.albums)  // All photos have source: 'albums'
           .where('albumName', isEqualTo: widget.parentAlbumName)
           .get();
 
       binderPhotos.clear();
-      binderPhotos[widget.binderName] = [];
+      for (var binder in binders) {
+        binderPhotos[binder] = [];
+      }
 
       for (var doc in photosQuery.docs) {
         final data = doc.data() as Map<String, dynamic>;
@@ -119,7 +122,10 @@ class _BindersScreenState extends State<BindersScreen> {
           likesCount: 0,
         );
         
-        binderPhotos[widget.binderName]!.add(photo);
+        final binderName = data['binderName'] ?? 'My Binder';
+        if (binderPhotos.containsKey(binderName)) {
+          binderPhotos[binderName]!.add(photo);
+        }
       }
 
       setState(() {});
@@ -326,7 +332,7 @@ class _BindersScreenState extends State<BindersScreen> {
                                   'binderName': widget.binderName,
                                   'albumName': widget.parentAlbumName,
                                   'userId': currentUser.uid,
-                                  'source': widget.source,
+                                  'source': PhotoSources.albums,  // All photos should have source: 'albums'
                                 });
 
                                 Navigator.pop(context); // Hide loading indicator
@@ -358,15 +364,18 @@ class _BindersScreenState extends State<BindersScreen> {
                                 mainAxisSpacing: 8,
                                 childAspectRatio: 0.75,
                               ),
-                              itemCount: binders.length + (binderPhotos[widget.binderName]?.length ?? 0),
+                              itemCount: binders.length + (binderPhotos['My Binder']?.length ?? 0),
                               itemBuilder: (context, index) {
+                                // First show binders
                                 if (index < binders.length) {
                                   return _buildBinderCard(binders[index]);
-                                } else {
+                                } 
+                                // Then show photos from My Binder
+                                else {
                                   final photoIndex = index - binders.length;
-                                  if (binderPhotos[widget.binderName] != null && 
-                                      photoIndex < binderPhotos[widget.binderName]!.length) {
-                                    final photo = binderPhotos[widget.binderName]![photoIndex];
+                                  if (binderPhotos['My Binder'] != null && 
+                                      photoIndex < binderPhotos['My Binder']!.length) {
+                                    final photo = binderPhotos['My Binder']![photoIndex];
                                     return _buildPhotoCard(photo);
                                   }
                                   return const SizedBox();
@@ -547,6 +556,10 @@ class _BindersScreenState extends State<BindersScreen> {
   }
 
   Widget _buildPhotoCard(PhotoData photo) {
+    print('🎨 Building photo card for: ${photo.title}');
+    print('🔗 Photo URL: ${photo.firebaseUrl}');
+    print('🆔 Photo ID: ${photo.id}');
+    
     return InkWell(
       onTap: () => _showEnlargedImage(photo),
       child: Container(
@@ -571,7 +584,7 @@ class _BindersScreenState extends State<BindersScreen> {
                 width: double.infinity,
                 height: double.infinity,
                 errorBuilder: (context, error, stackTrace) {
-                  print('Error loading image: $error');
+                  print('❌ Network image error: $error');
                   return Container(
                     color: Colors.grey[300],
                     child: const Center(
@@ -952,6 +965,53 @@ class _BindersScreenState extends State<BindersScreen> {
               ),
             );
           }
+        );
+      },
+    );
+  }
+
+  Future<Uint8List?> _loadImageBytes(String imageUrl) async {
+    try {
+      final response = await http.get(Uri.parse(imageUrl));
+      if (response.statusCode == 200) {
+        return response.bodyBytes;
+      }
+    } catch (e) {
+      print('Error loading image bytes: $e');
+    }
+    return null;
+  }
+
+  Widget _buildFallbackImage(String imageUrl) {
+    return Image.network(
+      imageUrl,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+      errorBuilder: (context, error, stackTrace) {
+        print('❌ Network image error: $error');
+        return Container(
+          color: Colors.grey[300],
+          child: const Center(
+            child: Icon(
+              Icons.error_outline,
+              color: Colors.grey,
+              size: 32,
+            ),
+          ),
+        );
+      },
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) return child;
+        return Container(
+          color: Colors.grey[300],
+          child: Center(
+            child: CircularProgressIndicator(
+              value: loadingProgress.expectedTotalBytes != null
+                  ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                  : null,
+            ),
+          ),
         );
       },
     );

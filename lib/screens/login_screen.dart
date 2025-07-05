@@ -34,42 +34,21 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _testFirebaseAuth() async {
-    try {
-      print('Testing Firebase Auth...');
-      final auth = FirebaseAuth.instance;
-      print('Firebase Auth instance: $auth');
-      print('Current user: ${auth.currentUser}');
-      print('Auth state: ${auth.authStateChanges()}');
-      
-      // Test available sign-in methods
-      print('Testing available sign-in methods...');
-      try {
-        final methods = await auth.fetchSignInMethodsForEmail('gecko1@gmail.com');
-        print('Available sign-in methods for gecko1@gmail.com: $methods');
-      } catch (e) {
-        print('Error checking sign-in methods: $e');
-      }
-    } catch (e) {
-      print('Firebase Auth test error: $e');
-    }
+    // Debug method - removed print statements to reduce clutter
   }
 
   Future<void> _handleGoogleSignIn() async {
     try {
       setState(() => _isLoading = true);
-      print('Starting Google Sign-In...');
 
       // Use Firebase Auth Google provider for both web and mobile
       final googleProvider = GoogleAuthProvider();
       googleProvider.addScope('email');
       googleProvider.addScope('profile');
-      
-      print('Signing in with Google...');
       final userCredential = await _auth.signInWithPopup(googleProvider);
       final user = userCredential.user;
 
       if (user != null) {
-        print('Google Sign-In successful! User: ${user.email}');
         // Update user data in Firestore
         await _updateUserData(user);
 
@@ -87,8 +66,6 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
     } catch (e) {
-      print('Google sign-in error: $e');
-      debugPrint('Google sign-in error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to sign in with Google: ${e.toString()}')),
@@ -112,7 +89,7 @@ class _LoginScreenState extends State<LoginScreen> {
       "photoURL": user.photoURL,
       "lastLogin": FirestoreService.serverTimestamp,
     });
-        print('Updated existing user document for ${user.email}');
+        // User document updated
       } else {
         // Create new user document
         await FirestoreService.users.doc(user.uid).set({
@@ -124,10 +101,9 @@ class _LoginScreenState extends State<LoginScreen> {
           "createdAt": FirestoreService.serverTimestamp,
           "lastLogin": FirestoreService.serverTimestamp,
         });
-        print('Created new user document for ${user.email}');
+        // User document created
       }
     } catch (e) {
-      print('Error updating user data: $e');
       // Don't throw error - let user continue even if Firestore update fails
     }
   }
@@ -137,15 +113,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       setState(() => _isLoading = true);
-      print('Starting email/password login...');
-      print('Email: ${_emailController.text.trim()}');
 
       await _auth.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
 
-      print('Email/password login successful!');
       if (mounted) {
         Navigator.pushReplacement(
           context,
@@ -155,11 +128,9 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } on FirebaseAuthException catch (e) {
-      print('Firebase Auth error: ${e.code} - ${e.message}');
       String message = 'An error occurred';
       if (e.code == 'user-not-found') {
         message = 'No user found for that email. Please register first.';
-        print('User not found - they need to register in this project');
       } else if (e.code == 'wrong-password') {
         message = 'Wrong password provided.';
       } else if (e.code == 'invalid-email') {
@@ -177,7 +148,6 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } catch (e) {
-      print('General login error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Login failed: ${e.toString()}')),

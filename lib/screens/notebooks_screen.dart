@@ -2,30 +2,32 @@ import 'package:flutter/material.dart';
 import '../styles/colors.dart';
 import '../common/header.dart';
 import '../common/title_header.dart';
+import '../screens/binders_screen.dart';
+import '../screens/photos_only_screen.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../models/photo_data.dart';
-import '../screens/binders_screen.dart';
-import '../screens/photos_only_screen.dart';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
 import '../constants/photo_sources.dart';
+import 'package:http/http.dart' as http;
 
 class NotebooksScreen extends StatefulWidget {
   final String notebookName;
-  final String parentBinderName;
-  final String parentAlbumName;
+  final String? parentBinderName;
+  final String? parentAlbumName;
   final String source;
-
   const NotebooksScreen({
     super.key, 
     required this.notebookName,
-    required this.parentBinderName,
-    required this.parentAlbumName,
+    this.parentBinderName,
+    this.parentAlbumName,
     this.source = PhotoSources.notebooks,
   });
 
@@ -34,9 +36,9 @@ class NotebooksScreen extends StatefulWidget {
 }
 
 class _NotebooksScreenState extends State<NotebooksScreen> {
-  final ImagePicker _picker = ImagePicker();
   List<String> notebooks = ['My Notebook'];
-  List<PhotoData> notebookPhotos = [];
+  final ImagePicker _picker = ImagePicker();
+  Map<String, List<PhotoData>> notebookPhotos = {};
   bool _isLoading = false;
 
   @override
@@ -46,7 +48,7 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
       final appState = Provider.of<AppState>(context, listen: false);
       await appState.initializeUser();
       await _loadNotebooks();
-      _loadNotebookPhotos();
+      await _loadNotebookPhotos();
     });
   }
 
@@ -54,17 +56,11 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
     try {
       final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
       if (currentUser == null) return;
-
-      // Firestore: Get notebooks for user, binder, and album
-      final notebooksQuery = await FirestoreService.notebooks
-          .where('userId', isEqualTo: currentUser.uid)
-          .where('binderName', isEqualTo: widget.parentBinderName)
-          .where('albumName', isEqualTo: widget.parentAlbumName)
-          .get();
-
+      // Firestore: get notebooks for user (using albums collection)
+      final query = await FirestoreService.albums.where('userId', isEqualTo: currentUser.uid).get();
       setState(() {
-        notebooks = ['My Notebook']; // Reset to default notebook
-        for (var doc in notebooksQuery.docs) {
+        notebooks = [widget.notebookName];
+        for (var doc in query.docs) {
           final data = doc.data() as Map<String, dynamic>;
           if (data['name'] != null) {
             notebooks.add(data['name']);
@@ -80,21 +76,34 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
     setState(() => _isLoading = true);
     try {
       final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
-      if (currentUser == null) return;
-
-      // Firestore: Get photos for this notebook
-      final photosQuery = await FirestoreService.photos
-          .where('userId', isEqualTo: currentUser.uid)
-          .where('source', isEqualTo: widget.source)
-          .where('notebookName', isEqualTo: widget.notebookName)
-          .where('binderName', isEqualTo: widget.parentBinderName)
-          .where('albumName', isEqualTo: widget.parentAlbumName)
-          .get();
-
+      if (currentUser == null) {
+        print('❌ No user found when loading photos');
+        return;
+      }
+      
+      print('🔄 Loading photos for user: ${currentUser.uid}');
+      print('📁 Looking for source: ${widget.source}');
+      print('📂 Filtering by album: ${widget.parentAlbumName}');
+      print('📂 Filtering by binder: ${widget.parentBinderName}');
+      
+      final query = await FirestoreService.photos
+        .where('userId', isEqualTo: currentUser.uid)
+        .where('source', isEqualTo: PhotoSources.albums)  // All photos have source: 'albums'
+        .where('albumName', isEqualTo: widget.parentAlbumName)
+        .where('binderName', isEqualTo: widget.parentBinderName)
+        .get();
+      
+      print('📊 Found ${query.docs.length} photos in Firestore');
+      
       notebookPhotos.clear();
-
-      for (var doc in photosQuery.docs) {
+      for (var notebook in notebooks) {
+        notebookPhotos[notebook] = [];
+      }
+      
+      for (var doc in query.docs) {
         final data = doc.data() as Map<String, dynamic>;
+        print('📄 Photo document: ${doc.id} - ${data.toString()}');
+        
         final photo = PhotoData(
           id: doc.id,
           file: null,
@@ -102,15 +111,19 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
           title: data['title'] ?? 'Photo Details',
           comment: data['comment'] ?? '',
           userId: currentUser.uid,
-          isLiked: data['isLiked'] ?? false,
+          isLiked: false,
           likesCount: 0,
         );
-        notebookPhotos.add(photo);
+        final notebookName = data['notebookName'] ?? 'My Notebook';
+        if (notebookPhotos.containsKey(notebookName)) {
+          notebookPhotos[notebookName]!.add(photo);
+        }
       }
-
+      
+      print('✅ Loaded ${notebookPhotos.values.fold(0, (sum, photos) => sum + photos.length)} photos total');
       setState(() {});
     } catch (e) {
-      print('Error loading notebook photos: $e');
+      print('❌ Error loading notebook photos: $e');
     } finally {
       setState(() => _isLoading = false);
     }
@@ -128,36 +141,20 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
           child: Column(
             children: [
               const TitleHeader(),
-              const Header(initialIndex: 1),
+              const Header(initialIndex: 2),
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
                     children: [
-                      // Back button row
-                      Align(
-                        alignment: Alignment.topLeft,
-                        child: Padding(
-                          padding: const EdgeInsets.only(left: 8.0),
-                          child: IconButton(
-                            icon: const Icon(
-                              Icons.arrow_back,
-                              color: AppColors.titleText,
-                            ),
-                            onPressed: () {
-                              Navigator.pop(context);
-                            },
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 20.0),
+                      const SizedBox(height: 60.0),
                       // Action Buttons at the top
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
                           _buildActionButton(
                             'Create Notebook',
-                            Icons.book,
+                            Icons.create_new_folder,
                             () {
                               _createNewNotebook();
                             },
@@ -193,19 +190,27 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                                 );
 
                                 final String photoId = DateTime.now().millisecondsSinceEpoch.toString();
+                                print('🔄 Starting upload for photo ID: $photoId');
+                                print('👤 User ID: ${currentUser.uid}');
+                                print('📁 Source: ${widget.source}');
+                                
                                 final storageRef = FirebaseStorage.instance
                                     .ref()
                                     .child('photos')
                                     .child(currentUser.uid)
                                     .child(photoId);
+                                
+                                print('📂 Storage path: photos/${currentUser.uid}/$photoId');
 
                                 if (kIsWeb) {
                                   final bytes = await pickedFile.readAsBytes();
+                                  print('📤 Uploading ${bytes.length} bytes to Storage...');
                                   await storageRef.putData(
                                     bytes,
                                     SettableMetadata(contentType: 'image/jpeg'),
                                   );
                                 } else {
+                                  print('📤 Uploading file to Storage...');
                                   await storageRef.putFile(
                                     File(pickedFile.path),
                                     SettableMetadata(contentType: 'image/jpeg'),
@@ -213,20 +218,28 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                                 }
 
                                 final downloadUrl = await storageRef.getDownloadURL();
+                                print('✅ Storage upload complete. URL: $downloadUrl');
 
                                 // Firestore: Save photo with hierarchy info
-                                await FirestoreService.photos.doc(photoId).set({
+                                print('📝 Saving to Firestore...');
+                                final firestoreData = {
                                   'url': downloadUrl,
                                   'timestamp': FieldValue.serverTimestamp(),
-                                  'notebookName': widget.notebookName,
-                                  'binderName': widget.parentBinderName,
                                   'albumName': widget.parentAlbumName,
+                                  'binderName': widget.parentBinderName,
+                                  'notebookName': widget.notebookName,
                                   'userId': currentUser.uid,
-                                  'source': widget.source,
-                                });
+                                  'source': PhotoSources.albums,  // All photos should have source: 'albums'
+                                };
+                                print('📄 Firestore data: $firestoreData');
+                                
+                                await FirestoreService.photos.doc(photoId).set(firestoreData);
+                                print('✅ Firestore save complete');
 
                                 Navigator.pop(context); // Hide loading indicator
+                                print('🔄 Reloading photos...');
                                 await _loadNotebookPhotos(); // Reload photos
+                                print('✅ Photo upload process complete');
 
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(content: Text('Photo uploaded successfully!')),
@@ -243,28 +256,41 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                         ],
                       ),
                       const SizedBox(height: 74),
-                      // Notebooks and Photos Grid
+                      // Notebooks Grid below
                       Expanded(
                         child: _isLoading 
                           ? const Center(child: CircularProgressIndicator())
                           : GridView.builder(
                               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 3,
+                                crossAxisCount: 3,  // 3 items per row
                                 crossAxisSpacing: 8,
                                 mainAxisSpacing: 8,
-                                childAspectRatio: 0.75,
+                                childAspectRatio: 0.75,  // Make items slightly taller than wide
                               ),
-                              itemCount: notebooks.length + notebookPhotos.length,
+                              itemCount: notebooks.length + (notebookPhotos[widget.notebookName]?.length ?? 0),  // Show both notebooks and photos
                               itemBuilder: (context, index) {
+                                print('🔍 Building grid item $index');
+                                print('📊 Notebooks length: ${notebooks.length}');
+                                print('📸 Photos in ${widget.notebookName}: ${notebookPhotos[widget.notebookName]?.length ?? 0}');
+                                print('📄 Notebook photos map: $notebookPhotos');
+                                
+                                // First show notebooks
                                 if (index < notebooks.length) {
+                                  print('🏷️ Building notebook card for: ${notebooks[index]}');
                                   return _buildNotebookCard(notebooks[index]);
-                                } else {
+                                } 
+                                // Then show photos
+                                else {
                                   final photoIndex = index - notebooks.length;
-                                  if (photoIndex < notebookPhotos.length) {
-                                    final photo = notebookPhotos[photoIndex];
-                                    return _buildPhotoCard(photo);
+                                  print('🖼️ Building photo card at index: $photoIndex');
+                                  if (notebookPhotos[widget.notebookName] != null && photoIndex < notebookPhotos[widget.notebookName]!.length) {
+                                  final photo = notebookPhotos[widget.notebookName]![photoIndex];
+                                    print('📸 Photo data: ${photo.firebaseUrl}');
+                                  return _buildPhotoCard(photo);
+                                  } else {
+                                    print('❌ No photo found at index $photoIndex');
+                                    return Container(); // Empty container if no photo
                                   }
-                                  return const SizedBox();
                                 }
                               },
                             ),
@@ -280,20 +306,97 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
     );
   }
 
+  void _createNewNotebook() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        String newNotebookName = '';
+        return AlertDialog(
+          backgroundColor: AppColors.dialogBackground,
+          title: const Text(
+            'Create New Notebook',
+            style: TextStyle(color: AppColors.titleText),
+          ),
+          content: TextField(
+            style: const TextStyle(color: AppColors.titleText),
+            decoration: const InputDecoration(
+              hintText: 'Enter notebook name',
+              hintStyle: TextStyle(color: Colors.grey),
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: Colors.grey),
+              ),
+              focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: Colors.brown),
+              ),
+            ),
+            onChanged: (value) {
+              newNotebookName = value;
+            },
+          ),
+          actions: [
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.brown,
+              ),
+            ),
+            TextButton(
+              child: const Text('Create'),
+              onPressed: () async {
+                if (newNotebookName.isNotEmpty) {
+                  try {
+                    final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
+                    if (currentUser == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Please log in to create notebooks')),
+                      );
+                      return;
+                    }
+                    // Firestore: create notebook (using albums collection)
+                    await FirestoreService.albums.add({
+                      'name': newNotebookName,
+                      'createdAt': FieldValue.serverTimestamp(),
+                      'userId': currentUser.uid,
+                    });
+                    setState(() {
+                      notebooks.add(newNotebookName);
+                    });
+                    Navigator.of(context).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Notebook created successfully!')),
+                    );
+                  } catch (e) {
+                    print('Error creating notebook: $e');
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Failed to create notebook: ${e.toString()}')),
+                    );
+                  }
+                }
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.brown,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildNotebookCard(String notebookName) {
-    // Get photos for this specific notebook
-    final photos = notebookPhotos.where((photo) => photo.title == notebookName).toList();
-    
+    final photos = notebookPhotos[notebookName] ?? [];
     return InkWell(
       onTap: () {
-        // Navigate to the notebook's photos
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => PhotosOnlyScreen(
               notebookName: notebookName,
-              parentBinderName: widget.parentBinderName,
-              parentAlbumName: widget.parentAlbumName,
+              parentBinderName: widget.parentBinderName!,
+              parentAlbumName: widget.parentAlbumName!,
               source: PhotoSources.photosOnly,
             ),
           ),
@@ -320,7 +423,6 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                   builder: (context, constraints) {
                     return Column(
                       children: [
-                        // Large image on top
                         if (photos.isNotEmpty)
                           Expanded(
                             flex: 2,
@@ -336,7 +438,6 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                               },
                             ),
                           ),
-                        // Three smaller images below
                         if (photos.length > 1)
                           Expanded(
                             flex: 1,
@@ -355,7 +456,6 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                                       },
                                     ),
                                   ),
-                                // Fill remaining space with empty containers if needed
                                 for (var i = photos.length; i < 4; i++)
                                   Expanded(
                                     child: Container(
@@ -370,7 +470,6 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                   },
                 ),
               ),
-            // Notebook name overlay
             Positioned(
               bottom: 0,
               left: 0,
@@ -444,6 +543,10 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
   }
 
   Widget _buildPhotoCard(PhotoData photo) {
+    print('🎨 Building photo card for: ${photo.title}');
+    print('🔗 Photo URL: ${photo.firebaseUrl}');
+    print('🆔 Photo ID: ${photo.id}');
+    
     return InkWell(
       onTap: () => _showEnlargedImage(photo),
       child: Container(
@@ -462,40 +565,40 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(15),
-              child: Image.network(
-                photo.firebaseUrl!,
+              child: FutureBuilder<Uint8List?>(
+                future: _loadImageBytes(photo.firebaseUrl!),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return Container(
+                      color: Colors.grey[300],
+                      child: const Center(
+                        child: CircularProgressIndicator(),
+                      ),
+                    );
+                  }
+                  
+                  if (snapshot.hasError) {
+                    print('❌ Error loading image bytes: ${snapshot.error}');
+                    return _buildFallbackImage(photo.firebaseUrl!);
+                  }
+                  
+                  if (snapshot.hasData && snapshot.data != null) {
+                    return Image.memory(
+                      snapshot.data!,
                 fit: BoxFit.cover,
                 width: double.infinity,
                 height: double.infinity,
-                errorBuilder: (context, error, stackTrace) {
-                  print('Error loading image: $error');
-                  return Container(
-                    color: Colors.grey[300],
-                    child: const Center(
-                      child: Icon(
-                        Icons.error_outline,
-                        color: Colors.grey,
-                        size: 32,
-                      ),
-                    ),
-                  );
-                },
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return Container(
-                    color: Colors.grey[300],
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        value: loadingProgress.expectedTotalBytes != null
-                            ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                            : null,
-                      ),
-                    ),
-                  );
+                      errorBuilder: (context, error, stackTrace) {
+                        print('❌ Memory image error: $error');
+                        return _buildFallbackImage(photo.firebaseUrl!);
+                      },
+                    );
+                  }
+                  
+                  return _buildFallbackImage(photo.firebaseUrl!);
                 },
               ),
             ),
-            // Title overlay
             Positioned(
               top: 0,
               left: 0,
@@ -528,7 +631,6 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                 ),
               ),
             ),
-            // Like icon
             Positioned(
               bottom: 8,
               right: 8,
@@ -549,6 +651,61 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildFallbackImage(String url) {
+    return Image.network(
+      url,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) {
+          return child;
+        }
+        return Container(
+          color: Colors.grey[300],
+          child: const Center(
+            child: CircularProgressIndicator(),
+          ),
+        );
+      },
+      errorBuilder: (context, error, stackTrace) {
+        print('❌ Network image error: $error');
+        print('🔗 Failed URL: $url');
+        return Container(
+          color: Colors.grey[300],
+          child: const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.broken_image, color: Colors.grey),
+                SizedBox(height: 8),
+                Text('Image failed to load', style: TextStyle(color: Colors.grey, fontSize: 12)),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<Uint8List?> _loadImageBytes(String url) async {
+    try {
+      print('🔄 Loading image bytes from: $url');
+      final response = await http.get(Uri.parse(url));
+      
+      if (response.statusCode == 200) {
+        print('✅ Image bytes loaded successfully: ${response.bodyBytes.length} bytes');
+        return response.bodyBytes;
+      } else {
+        print('❌ HTTP error: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      print('❌ Error loading image bytes: $e');
+      return null;
+    }
   }
 
   void _showEnlargedImage(PhotoData photo) {
@@ -738,9 +895,31 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                         panEnabled: true,
                         minScale: 0.5,
                         maxScale: 4,
-                        child: Image.network(
-                          photo.firebaseUrl!,
+                        child: FutureBuilder<Uint8List?>(
+                          future: _loadImageBytes(photo.firebaseUrl!),
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState == ConnectionState.waiting) {
+                              return const Center(child: CircularProgressIndicator());
+                            }
+                            
+                            if (snapshot.hasError) {
+                              print('❌ Enlarged error loading image bytes: ${snapshot.error}');
+                              return _buildEnlargedFallbackImage(photo.firebaseUrl!);
+                            }
+                            
+                            if (snapshot.hasData && snapshot.data != null) {
+                              return Image.memory(
+                                snapshot.data!,
                           fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) {
+                                  print('❌ Enlarged memory image error: $error');
+                                  return _buildEnlargedFallbackImage(photo.firebaseUrl!);
+                                },
+                              );
+                            }
+                            
+                            return _buildEnlargedFallbackImage(photo.firebaseUrl!);
+                          },
                         ),
                       ),
                     ),
@@ -854,6 +1033,43 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
     );
   }
 
+  Widget _buildEnlargedFallbackImage(String url) {
+    return Image.network(
+      url,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) {
+          return child;
+        }
+        return Container(
+          color: Colors.grey[300],
+          child: const Center(
+            child: CircularProgressIndicator(),
+          ),
+        );
+      },
+      errorBuilder: (context, error, stackTrace) {
+        print('❌ Network image error: $error');
+        print('🔗 Failed URL: $url');
+        return Container(
+          color: Colors.grey[300],
+          child: const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.broken_image, color: Colors.grey),
+                SizedBox(height: 8),
+                Text('Image failed to load', style: TextStyle(color: Colors.grey)),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _savePhotoChanges(PhotoData photo) async {
     try {
       final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
@@ -865,13 +1081,14 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
         throw Exception('Photo ID cannot be empty');
       }
 
-      // Firestore: Update photo
-      await FirestoreService.photos.doc(photo.id).update({
+      final updates = {
         'title': photo.title.trim(),
         'comment': photo.comment.trim(),
         'isLiked': photo.isLiked,
         'lastModified': FieldValue.serverTimestamp(),
-      });
+      };
+
+      await FirestoreService.photos.doc(photo.id).update(updates);
 
       if (mounted) {
         final appState = Provider.of<AppState>(context, listen: false);
@@ -891,89 +1108,4 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
       rethrow;
     }
   }
-
-  void _createNewNotebook() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        String newNotebookName = '';
-        return AlertDialog(
-          backgroundColor: AppColors.dialogBackground,
-          title: const Text(
-            'Create New Notebook',
-            style: TextStyle(color: AppColors.titleText),
-          ),
-          content: TextField(
-            style: const TextStyle(color: AppColors.titleText),
-            decoration: const InputDecoration(
-              hintText: 'Enter notebook name',
-              hintStyle: TextStyle(color: Colors.grey),
-              enabledBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: Colors.grey),
-              ),
-              focusedBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: Colors.brown),
-              ),
-            ),
-            onChanged: (value) {
-              newNotebookName = value;
-            },
-          ),
-          actions: [
-            TextButton(
-              child: const Text('Cancel'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.brown,
-              ),
-            ),
-            TextButton(
-              child: const Text('Create'),
-              onPressed: () async {
-                if (newNotebookName.isNotEmpty) {
-                  try {
-                    final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
-                    if (currentUser == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Please log in to create notebooks')),
-                      );
-                      return;
-                    }
-
-                    // Firestore: Create notebook
-                    await FirestoreService.notebooks.add({
-                      'name': newNotebookName,
-                      'createdAt': FieldValue.serverTimestamp(),
-                      'userId': currentUser.uid,
-                      'binderName': widget.parentBinderName,
-                      'albumName': widget.parentAlbumName,
-                    });
-
-                    Navigator.of(context).pop();
-                    
-                    // Reload notebooks to show the new one
-                    await _loadNotebooks();
-                    
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Notebook created successfully!')),
-                    );
-                  } catch (e) {
-                    print('Error creating notebook: $e');
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Failed to create notebook: ${e.toString()}')),
-                    );
-                  }
-                }
-              },
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.brown,
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
+} 
