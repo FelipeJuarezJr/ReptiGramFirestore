@@ -4,6 +4,7 @@ import '../common/header.dart';
 import '../common/title_header.dart';
 import '../screens/binders_screen.dart';
 import '../screens/photos_only_screen.dart';
+
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:provider/provider.dart';
@@ -141,13 +142,38 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
           child: Column(
             children: [
               const TitleHeader(),
-              const Header(initialIndex: 2),
+              const Header(initialIndex: 1),
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
                     children: [
-                      const SizedBox(height: 60.0),
+                      // Back button row
+                      Align(
+                        alignment: Alignment.topLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 8.0),
+                          child: IconButton(
+                            icon: const Icon(
+                              Icons.arrow_back,
+                              color: AppColors.titleText,
+                            ),
+                            onPressed: () {
+                              Navigator.pushReplacement(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => BindersScreen(
+                                    binderName: widget.notebookName,
+                                    parentAlbumName: widget.parentAlbumName,
+                                    source: PhotoSources.binders,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20.0),
                       // Action Buttons at the top
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -305,6 +331,8 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
       ),
     );
   }
+
+
 
   void _createNewNotebook() {
     showDialog(
