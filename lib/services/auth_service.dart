@@ -66,6 +66,13 @@ class AuthService {
       googleProvider.addScope('email');
       googleProvider.addScope('profile');
       
+      // Force account selection by setting custom parameters
+      googleProvider.setCustomParameters({
+        'prompt': 'select_account',
+        'access_type': 'offline',
+        'include_granted_scopes': 'true',
+      });
+      
       // Sign in directly with Firebase Auth
       final userCredential = await FirebaseAuth.instance.signInWithPopup(googleProvider);
       

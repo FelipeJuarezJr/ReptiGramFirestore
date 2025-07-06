@@ -5,6 +5,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
 import 'screens/login_screen.dart';
 import 'screens/chat_screen.dart';
+import 'screens/post_screen.dart';
 import 'state/app_state.dart';
 import 'state/auth_state.dart';
 import 'state/dark_mode_provider.dart';
@@ -58,6 +59,7 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
     _initFirebaseMessaging();
+    _setupAuthStateListener();
   }
 
   Future<void> _initFirebaseMessaging() async {
@@ -169,6 +171,84 @@ class _MyAppState extends State<MyApp> {
     }
   }
 
+  Future<void> _handleRedirectResult() async {
+    try {
+      print('🔄 Checking for redirect result...');
+      
+      // Add a small delay to ensure Firebase is ready
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      // Handle redirect result from Google Sign-In
+      final result = await FirebaseAuth.instance.getRedirectResult();
+      
+      if (result != null) {
+        print('✅ Redirect result received');
+        
+        if (result.user != null) {
+          // User signed in successfully via redirect
+          print('✅ User signed in via redirect: ${result.user!.email}');
+          
+          // Update user data in Firestore
+          await _updateUserDataAfterRedirect(result.user!);
+          
+          // Navigate to main screen
+          if (mounted && _navigatorKey.currentContext != null) {
+            print('🚀 Navigating to main screen...');
+            Navigator.of(_navigatorKey.currentContext!).pushReplacement(
+              MaterialPageRoute(
+                builder: (context) => const PostScreen(shouldLoadPosts: true),
+              ),
+            );
+          } else {
+            print('❌ Cannot navigate: mounted=$mounted, context=${_navigatorKey.currentContext != null}');
+          }
+        } else {
+          print('❌ Redirect result has no user');
+          // Check if there's an error
+          if (result.credential != null) {
+            print('ℹ️ Redirect result has credential but no user');
+          }
+        }
+      } else {
+        print('ℹ️ No redirect result found');
+      }
+    } catch (e) {
+      print('❌ Error handling redirect result: $e');
+    }
+  }
+
+  Future<void> _updateUserDataAfterRedirect(User user) async {
+    try {
+      // Check if user document exists
+      final userDoc = await FirestoreService.users.doc(user.uid).get();
+      
+      if (userDoc.exists) {
+        // Update existing user document
+        await FirestoreService.updateUser(user.uid, {
+          "displayName": user.displayName,
+          "email": user.email,
+          "photoURL": user.photoURL,
+          "lastLogin": FirestoreService.serverTimestamp,
+        });
+        print('✅ User document updated after redirect');
+      } else {
+        // Create new user document
+        await FirestoreService.users.doc(user.uid).set({
+          "uid": user.uid,
+          "displayName": user.displayName,
+          "email": user.email,
+          "photoURL": user.photoURL,
+          "username": user.email?.split('@')[0] ?? 'user',
+          "createdAt": FirestoreService.serverTimestamp,
+          "lastLogin": FirestoreService.serverTimestamp,
+        });
+        print('✅ New user document created after redirect');
+      }
+    } catch (e) {
+      print('❌ Error updating user data after redirect: $e');
+    }
+  }
+
   void _navigateToChat(String senderId) {
     if (_navigatorKey.currentContext != null) {
       Navigator.of(_navigatorKey.currentContext!).push(
@@ -180,6 +260,35 @@ class _MyAppState extends State<MyApp> {
         ),
       );
     }
+  }
+
+  void _setupAuthStateListener() {
+    // Listen for auth state changes to handle sign-in completion
+    FirebaseAuth.instance.authStateChanges().listen((User? user) {
+      print('👤 Auth state changed: ${user?.email ?? 'null'}');
+      
+      // If user is signed in and we're on the login screen, navigate to main
+      if (user != null && mounted && _navigatorKey.currentContext != null) {
+        print('✅ User is signed in: ${user.email}');
+        
+        // Check if we're currently on the login screen
+        final currentRoute = ModalRoute.of(_navigatorKey.currentContext!);
+        if (currentRoute?.settings.name == '/' || currentRoute?.settings.name == null) {
+          print('🚀 Auth state change: Navigating to main screen...');
+          
+          // Add a small delay to ensure everything is ready
+          Future.delayed(const Duration(milliseconds: 100), () {
+            if (mounted && _navigatorKey.currentContext != null) {
+              Navigator.of(_navigatorKey.currentContext!).pushReplacement(
+                MaterialPageRoute(
+                  builder: (context) => const PostScreen(shouldLoadPosts: true),
+                ),
+              );
+            }
+          });
+        }
+      }
+    });
   }
 
   @override
@@ -198,7 +307,10 @@ class _MyAppState extends State<MyApp> {
           useMaterial3: true,
         ),
         navigatorKey: _navigatorKey,
-        home: const LoginScreen(),
+        initialRoute: '/',
+        routes: {
+          '/': (context) => const LoginScreen(),
+        },
       ),
     );
   }

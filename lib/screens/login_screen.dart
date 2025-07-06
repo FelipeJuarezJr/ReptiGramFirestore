@@ -41,10 +41,24 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       setState(() => _isLoading = true);
 
-      // Use Firebase Auth Google provider for both web and mobile
+      // Force account picker by clearing current user and using custom parameters
       final googleProvider = GoogleAuthProvider();
       googleProvider.addScope('email');
       googleProvider.addScope('profile');
+      
+      // Force account selection with multiple parameters
+      googleProvider.setCustomParameters({
+        'prompt': 'select_account',
+        'access_type': 'offline',
+        'include_granted_scopes': 'true',
+      });
+      
+      // Clear current user to force account picker
+      if (_auth.currentUser != null) {
+        await _auth.signOut();
+      }
+      
+      // Use popup for both web and mobile
       final userCredential = await _auth.signInWithPopup(googleProvider);
       final user = userCredential.user;
 
