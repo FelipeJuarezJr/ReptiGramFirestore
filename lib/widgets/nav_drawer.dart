@@ -12,7 +12,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../screens/post_screen.dart';
 import '../screens/albums_screen.dart';
 import '../screens/user_list_screen.dart';
-import '../screens/debug_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
 import '../services/chat_service.dart';
@@ -336,6 +335,7 @@ class _NavDrawerState extends State<NavDrawer> {
               );
             },
           ),
+          const Divider(),
           ListTile(
             leading: const Icon(Icons.settings),
             title: const Text('Settings'),
@@ -348,19 +348,6 @@ class _NavDrawerState extends State<NavDrawer> {
               );
             },
           ),
-          ListTile(
-            leading: const Icon(Icons.bug_report),
-            title: const Text('Debug'),
-            onTap: () {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const DebugScreen(),
-                ),
-              );
-            },
-          ),
-          const Divider(),
           ListTile(
             leading: const Icon(Icons.logout),
             title: const Text('Logout'),

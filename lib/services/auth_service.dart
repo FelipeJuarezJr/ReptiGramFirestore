@@ -204,12 +204,33 @@ class AuthService {
         String? token = await _messaging.getToken();
         
         if (token != null) {
-          // Save token to Firestore
-          await _db.collection('users').doc(userId).update({
-            'fcmToken': token,
-            'lastTokenUpdate': FieldValue.serverTimestamp(),
-          });
-          print('FCM token saved successfully');
+          // Check if user document exists first
+          final userDoc = await _db.collection('users').doc(userId).get();
+          
+          if (userDoc.exists) {
+            // Update existing user document
+            await _db.collection('users').doc(userId).update({
+              'fcmToken': token,
+              'lastTokenUpdate': FieldValue.serverTimestamp(),
+            });
+            print('FCM token saved successfully');
+          } else {
+            // Create user document if it doesn't exist
+            final user = FirebaseAuth.instance.currentUser;
+            if (user != null) {
+              await _db.collection('users').doc(userId).set({
+                'email': user.email,
+                'displayName': user.displayName,
+                'username': user.displayName?.toLowerCase().replaceAll(' ', '') ?? 'user',
+                'photoURL': user.photoURL,
+                'fcmToken': token,
+                'lastTokenUpdate': FieldValue.serverTimestamp(),
+                'createdAt': FieldValue.serverTimestamp(),
+                'lastLogin': FieldValue.serverTimestamp(),
+              });
+              print('User document created with FCM token');
+            }
+          }
         }
       } else {
         print('Notification permission denied');
