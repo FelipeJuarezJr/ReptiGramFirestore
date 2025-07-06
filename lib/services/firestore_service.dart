@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_model.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'dart:typed_data';
 
 class FirestoreService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -219,5 +221,52 @@ class FirestoreService {
     batch.set(usernames.doc(newUsername.toLowerCase()), {'uid': userId});
     
     await batch.commit();
+  }
+
+  static Future<String?> getUserPhotoUrl(String uid) async {
+    final doc = await users.doc(uid).get();
+    if (doc.exists) {
+      final data = doc.data() as Map<String, dynamic>;
+      return data['photoUrl'] ?? data['photoURL'];
+    }
+    return null;
+  }
+
+  static Future<void> saveFcmToken(String uid, String token) async {
+    await users.doc(uid).update({
+      'fcmToken': token,
+      'lastTokenUpdate': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static Future<String?> getFcmToken(String uid) async {
+    final doc = await users.doc(uid).get();
+    if (doc.exists) {
+      final data = doc.data() as Map<String, dynamic>;
+      return data['fcmToken'] as String?;
+    }
+    return null;
+  }
+
+  static Future<void> uploadUserPhoto(String uid, Uint8List imageBytes) async {
+    try {
+      // Upload to Firebase Storage
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child('user_photos')
+          .child('$uid.jpg');
+      
+      await storageRef.putData(imageBytes);
+      final downloadUrl = await storageRef.getDownloadURL();
+      
+      // Update user document with photo URL
+      await users.doc(uid).update({
+        'photoUrl': downloadUrl,
+        'photoUpdatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('Error uploading user photo: $e');
+      rethrow;
+    }
   }
 } 

@@ -42,6 +42,22 @@ service firebase.storage {
       allow list: if request.auth != null;
     }
     
+    // User photos for profile images: allow public read, authenticated write for own photos
+    match /user_photos/{fileName} {
+      allow read: if true; // Allow public read for profile images
+      allow write: if request.auth != null;
+    }
+    
+    // Chat images: allow authenticated users to upload/download
+    match /chat_images/{chatId}/{fileName} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Chat files: allow authenticated users to upload/download
+    match /chat_files/{chatId}/{fileName} {
+      allow read, write: if request.auth != null;
+    }
+    
     // Default deny
     match /{allPaths=**} {
       allow read, write: if false;

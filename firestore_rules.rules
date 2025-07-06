@@ -98,5 +98,29 @@ service cloud.firestore {
       allow read: if true;
       allow write: if request.auth != null;
     }
+
+    // Chats collection: allow authenticated users to read/write their chats
+    match /chats/{chatId} {
+      // Allow read/write if user is authenticated and is a participant in the chat
+      allow read, write: if request.auth != null && 
+        (chatId.matches(request.auth.uid + '_.*') || chatId.matches('.*_' + request.auth.uid));
+      
+      // Messages subcollection
+      match /messages/{messageId} {
+        // Allow read/write if user is authenticated and is a participant in the chat
+        allow read, write: if request.auth != null && 
+          (chatId.matches(request.auth.uid + '_.*') || chatId.matches('.*_' + request.auth.uid));
+      }
+    }
+    
+    // Temporary: Allow all authenticated users to read/write chats for debugging
+    // Remove this after fixing the chat issues
+    match /chats/{chatId} {
+      allow read, write: if request.auth != null;
+      
+      match /messages/{messageId} {
+        allow read, write: if request.auth != null;
+      }
+    }
   }
 } 

@@ -11,6 +11,11 @@ import 'dart:typed_data';
 import 'package:url_launcher/url_launcher.dart';
 import '../screens/post_screen.dart';
 import '../screens/albums_screen.dart';
+import '../screens/user_list_screen.dart';
+import '../screens/debug_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/firestore_service.dart';
+import '../services/chat_service.dart';
 
 class NavDrawer extends StatefulWidget {
   final String? userEmail;
@@ -33,12 +38,12 @@ class _NavDrawerState extends State<NavDrawer> {
   bool _isUploading = false;
   String? _photoUrl;
   bool _isHovering = false;
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
-    final user = FirebaseAuth.instance.currentUser;
-    _photoUrl = user?.photoURL ?? widget.userPhotoUrl;
+    _loadUserPhoto();
   }
 
   Future<void> _uploadImage(Uint8List imageBytes) async {
@@ -50,12 +55,11 @@ class _NavDrawerState extends State<NavDrawer> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
-      // Create a reference to the user's profile image
+      // Create a reference to the user's profile image (consistent with FirestoreService)
       final storageRef = FirebaseStorage.instance
           .ref()
-          .child('profile_images')
-          .child(user.uid)
-          .child('avatar.jpg');
+          .child('user_photos')
+          .child('${user.uid}.jpg');
 
       // Upload the image
       await storageRef.putData(imageBytes);
@@ -63,10 +67,16 @@ class _NavDrawerState extends State<NavDrawer> {
       // Get the download URL
       final downloadUrl = await storageRef.getDownloadURL();
 
-      // Update the user's profile
+      // Update the user's profile in Firebase Auth
       await user.updatePhotoURL(downloadUrl);
       await user.reload();
       final updatedUser = FirebaseAuth.instance.currentUser;
+
+      // Also update the user document in Firestore
+      await FirestoreService.users.doc(user.uid).update({
+        'photoUrl': downloadUrl,
+        'photoUpdatedAt': FieldValue.serverTimestamp(),
+      });
 
       setState(() {
         _selectedImageBytes = imageBytes;
@@ -94,34 +104,37 @@ class _NavDrawerState extends State<NavDrawer> {
   }
 
   Future<void> _pickImage() async {
-    final ImagePicker picker = ImagePicker();
-    
-    // Show a dialog to let user choose between camera and gallery
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Choose Profile Image'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.photo_library),
-                title: const Text('Gallery'),
-                onTap: () async {
-                  Navigator.pop(context);
-                  final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-                  if (image != null) {
-                    final bytes = await image.readAsBytes();
-                    await _uploadImage(bytes);
-                  }
-                },
-              ),
-            ],
-          ),
+    try {
+      final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+      if (image != null) {
+        final bytes = await image.readAsBytes();
+        await _uploadImage(bytes);
+      }
+    } catch (e) {
+      setState(() {
+        _isUploading = false;
+        _selectedImageBytes = null;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error uploading photo: $e')),
         );
-      },
-    );
+      }
+    }
+  }
+
+  Future<void> _loadUserPhoto() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      // First try to get photo from Firestore (custom uploads)
+      final photoUrl = await FirestoreService.getUserPhotoUrl(user.uid);
+      if (mounted) {
+        setState(() {
+          // Prioritize Firestore photoUrl over Firebase Auth photoURL
+          _photoUrl = photoUrl ?? user.photoURL ?? widget.userPhotoUrl;
+        });
+      }
+    }
   }
 
   @override
@@ -174,10 +187,16 @@ class _NavDrawerState extends State<NavDrawer> {
                               CircleAvatar(
                                 radius: 30,
                                 backgroundImage: _selectedImageBytes != null
-                                    ? MemoryImage(_selectedImageBytes!)
+                                    ? MemoryImage(_selectedImageBytes!) as ImageProvider
                                     : (_photoUrl ?? widget.userPhotoUrl) != null
-                                        ? NetworkImage((_photoUrl ?? widget.userPhotoUrl)!)
+                                        ? NetworkImage((_photoUrl ?? widget.userPhotoUrl)!) as ImageProvider
                                         : const AssetImage('assets/img/reptiGramLogo.png') as ImageProvider,
+                                onBackgroundImageError: (exception, stackTrace) {
+                                  // Handle image loading errors by showing app logo
+                                  setState(() {
+                                    _photoUrl = null;
+                                  });
+                                },
                               ),
                               if (_isUploading)
                                 const Positioned.fill(
@@ -268,6 +287,56 @@ class _NavDrawerState extends State<NavDrawer> {
             },
           ),
           ListTile(
+            leading: Stack(
+              children: [
+                const Icon(Icons.message),
+                if (user != null)
+                  StreamBuilder<int>(
+                    stream: _getUnreadMessageCount(user.uid),
+                    builder: (context, snapshot) {
+                      final unreadCount = snapshot.data ?? 0;
+                      if (unreadCount == 0) {
+                        return const SizedBox.shrink();
+                      }
+                      return Positioned(
+                        right: 0,
+                        top: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          constraints: const BoxConstraints(
+                            minWidth: 16,
+                            minHeight: 16,
+                          ),
+                          child: Text(
+                            unreadCount > 99 ? '99+' : unreadCount.toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            ),
+            title: const Text('Messenger'),
+            onTap: () {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const UserListScreen(),
+                ),
+              );
+            },
+          ),
+          ListTile(
             leading: const Icon(Icons.settings),
             title: const Text('Settings'),
             onTap: () {
@@ -275,6 +344,18 @@ class _NavDrawerState extends State<NavDrawer> {
                 context,
                 MaterialPageRoute(
                   builder: (context) => SettingsScreen(),
+                ),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.bug_report),
+            title: const Text('Debug'),
+            onTap: () {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const DebugScreen(),
                 ),
               );
             },
@@ -330,5 +411,45 @@ class _NavDrawerState extends State<NavDrawer> {
         ],
       ),
     );
+  }
+
+  Stream<int> _getUnreadMessageCount(String currentUserId) {
+    return FirebaseFirestore.instance
+        .collection('chats')
+        .snapshots()
+        .asyncMap((snapshot) async {
+      int totalUnread = 0;
+      
+      for (final chatDoc in snapshot.docs) {
+        final chatId = chatDoc.id;
+        final userIds = chatId.split('_');
+        
+        // Check if current user is part of this chat
+        if (userIds.contains(currentUserId)) {
+          try {
+            // Get the last message to check if it's unread
+            final messageSnapshot = await chatDoc.reference
+                .collection('messages')
+                .orderBy('timestamp', descending: true)
+                .limit(1)
+                .get();
+                
+            if (messageSnapshot.docs.isNotEmpty) {
+              final lastMessage = messageSnapshot.docs.first.data();
+              final senderId = lastMessage['senderId'] as String?;
+              
+              // If message is from someone else, consider it unread
+              if (senderId != null && senderId != currentUserId) {
+                totalUnread++;
+              }
+            }
+          } catch (e) {
+            print('Error checking unread messages for chat $chatId: $e');
+          }
+        }
+      }
+      
+      return totalUnread;
+    });
   }
 } 
