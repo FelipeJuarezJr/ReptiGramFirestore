@@ -9,6 +9,7 @@ class ChatMessage {
   final MessageType messageType;
   final String? fileName;
   final int? fileSize;
+  final List<String> readBy;
 
   ChatMessage({
     required this.id,
@@ -19,6 +20,7 @@ class ChatMessage {
     this.messageType = MessageType.text,
     this.fileName,
     this.fileSize,
+    this.readBy = const [],
   });
 
   factory ChatMessage.fromMap(Map<String, dynamic> map) {
@@ -34,6 +36,7 @@ class ChatMessage {
       ),
       fileName: map['fileName'],
       fileSize: map['fileSize'],
+      readBy: List<String>.from(map['readBy'] ?? []),
     );
   }
 
@@ -46,5 +49,6 @@ class ChatMessage {
     'messageType': messageType.toString().split('.').last,
     'fileName': fileName,
     'fileSize': fileSize,
+    'readBy': readBy,
   };
 } 

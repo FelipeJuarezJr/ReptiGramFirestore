@@ -27,6 +27,21 @@ class _ChatScreenState extends State<ChatScreen> {
 
   final Map<String, String?> _avatarCache = {};
 
+  @override
+  void initState() {
+    super.initState();
+    // Mark messages as read when opening the chat
+    _markMessagesAsRead();
+  }
+
+  Future<void> _markMessagesAsRead() async {
+    try {
+      await _chatService.markMessagesAsRead(currentUser.uid, widget.peerUid);
+    } catch (e) {
+      print('Error marking messages as read: $e');
+    }
+  }
+
   void _sendMessage() {
     final text = _controller.text.trim();
     if (text.isNotEmpty) {

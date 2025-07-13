@@ -36,6 +36,70 @@ class ChatService {
         });
   }
 
+  // Mark messages as read when user opens the chat
+  Future<void> markMessagesAsRead(String currentUserId, String peerUserId) async {
+    try {
+      final chatId = getChatId(currentUserId, peerUserId);
+      
+      // Get all messages from the peer user that don't have current user in readBy
+      final unreadMessages = await _db
+          .collection('chats')
+          .doc(chatId)
+          .collection('messages')
+          .where('senderId', isEqualTo: peerUserId)
+          .get();
+
+      // Mark each message as read by the current user
+      final batch = _db.batch();
+      int updatedCount = 0;
+      
+      for (final doc in unreadMessages.docs) {
+        final data = doc.data();
+        final readBy = data['readBy'] as List<dynamic>?;
+        
+        // If readBy doesn't exist or current user is not in the list, mark as read
+        if (readBy == null || !readBy.contains(currentUserId)) {
+          final updatedReadBy = readBy != null 
+              ? List<String>.from(readBy) 
+              : <String>[];
+          
+          if (!updatedReadBy.contains(currentUserId)) {
+            updatedReadBy.add(currentUserId);
+            batch.update(doc.reference, {'readBy': updatedReadBy});
+            updatedCount++;
+          }
+        }
+      }
+      
+      if (updatedCount > 0) {
+        await batch.commit();
+        print('Marked $updatedCount messages as read for chat $chatId');
+      }
+    } catch (e) {
+      print('Error marking messages as read: $e');
+    }
+  }
+
+  // Get unread message count for a specific chat
+  Future<int> getUnreadMessageCount(String currentUserId, String peerUserId) async {
+    try {
+      final chatId = getChatId(currentUserId, peerUserId);
+      
+      final unreadMessages = await _db
+          .collection('chats')
+          .doc(chatId)
+          .collection('messages')
+          .where('senderId', isEqualTo: peerUserId)
+          .where('readBy', whereNotIn: [currentUserId])
+          .get();
+      
+      return unreadMessages.docs.length;
+    } catch (e) {
+      print('Error getting unread message count: $e');
+      return 0;
+    }
+  }
+
   Future<void> sendMessage(String uid1, String uid2, String text) async {
     try {
       final chatId = getChatId(uid1, uid2);
@@ -45,6 +109,7 @@ class ChatService {
         text: text,
         senderId: uid1,
         timestamp: DateTime.now().millisecondsSinceEpoch,
+        readBy: [uid1], // Sender has read their own message
       );
       
       print('Sending message: chatId=$chatId, messageId=$messageId, text=$text');
@@ -89,6 +154,7 @@ class ChatService {
       messageType: MessageType.image,
       fileName: fileName,
       fileSize: imageBytes.length,
+      readBy: [uid1], // Sender has read their own message
     );
     
     await _db
@@ -125,6 +191,7 @@ class ChatService {
       messageType: MessageType.file,
       fileName: fileName,
       fileSize: fileBytes.length,
+      readBy: [uid1], // Sender has read their own message
     );
     
     await _db
