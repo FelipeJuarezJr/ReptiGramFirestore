@@ -20,12 +20,12 @@ import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 
 class BindersScreen extends StatefulWidget {
-  final String binderName;
+  final String? binderName;
   final String? parentAlbumName;
   final String source;
   const BindersScreen({
     super.key, 
-    required this.binderName,
+    this.binderName,
     this.parentAlbumName,
     this.source = PhotoSources.binders,
   });
@@ -35,7 +35,7 @@ class BindersScreen extends StatefulWidget {
 }
 
 class _BindersScreenState extends State<BindersScreen> {
-  List<String> binders = ['My Binder'];
+  List<String> binders = [];
   final ImagePicker _picker = ImagePicker();
   Map<String, List<PhotoData>> binderPhotos = {};
   bool _isLoading = false;
@@ -48,22 +48,6 @@ class _BindersScreenState extends State<BindersScreen> {
       final appState = Provider.of<AppState>(context, listen: false);
       await appState.initializeUser();
       await _loadBinders();
-      if (binders.isEmpty) {
-        // Create default binder if none exists
-        final currentUser = appState.currentUser;
-        if (currentUser != null) {
-          // Firestore: Create default binder
-          await FirestoreService.binders.add({
-            'name': 'My Binder',
-            'createdAt': FieldValue.serverTimestamp(),
-            'userId': currentUser.uid,
-            'albumName': widget.parentAlbumName,
-          });
-          setState(() {
-            binders = ['My Binder'];
-          });
-        }
-      }
       _loadBinderPhotos();
     });
   }
@@ -80,7 +64,7 @@ class _BindersScreenState extends State<BindersScreen> {
           .get();
 
       setState(() {
-        binders = ['My Binder']; // Reset to default binder
+        binders = [];
         for (var doc in bindersQuery.docs) {
           final data = doc.data() as Map<String, dynamic>;
           if (data['name'] != null) {
@@ -112,12 +96,12 @@ class _BindersScreenState extends State<BindersScreen> {
         }
       }
 
-      // Firestore: Get photos for all binders in this album
+      // Firestore: Get photos uploaded directly to binders screen (no specific binder assignment)
       final photosQuery = await FirestoreService.photos
           .where('userId', isEqualTo: currentUser.uid)
-          .where('source', isEqualTo: PhotoSources.albums)  // All photos have source: 'albums'
+          .where('source', isEqualTo: PhotoSources.albums)
           .where('albumName', isEqualTo: widget.parentAlbumName)
-          .get();
+          .get(); // Get all photos for this album
 
       binderPhotos.clear();
       for (var binder in binders) {
@@ -143,8 +127,18 @@ class _BindersScreenState extends State<BindersScreen> {
         // Create a ValueNotifier for this photo's like status
         _likeNotifiers[photo.id] = ValueNotifier<bool>(isLiked);
         
-        final binderName = data['binderName'] ?? 'My Binder';
-        if (binderPhotos.containsKey(binderName)) {
+        final binderName = data['binderName'] ?? 'Unsorted';
+        
+        // If it's an unsorted photo, add to main grid
+        if (binderName == 'Unsorted') {
+          if (binderPhotos.containsKey('Main Grid')) {
+            binderPhotos['Main Grid']!.add(photo);
+          } else {
+            binderPhotos['Main Grid'] = [photo];
+          }
+        } 
+        // If it's assigned to a specific binder, add to that binder
+        else if (binderPhotos.containsKey(binderName)) {
           binderPhotos[binderName]!.add(photo);
         }
       }
@@ -350,10 +344,10 @@ class _BindersScreenState extends State<BindersScreen> {
                                 await FirestoreService.photos.doc(photoId).set({
                                   'url': downloadUrl,
                                   'timestamp': FieldValue.serverTimestamp(),
-                                  'binderName': widget.binderName,
+                                  'binderName': 'Unsorted', // Photos go to main grid
                                   'albumName': widget.parentAlbumName,
                                   'userId': currentUser.uid,
-                                  'source': PhotoSources.albums,  // All photos should have source: 'albums'
+                                  'source': PhotoSources.albums,
                                 });
 
                                 Navigator.pop(context); // Hide loading indicator
@@ -385,18 +379,18 @@ class _BindersScreenState extends State<BindersScreen> {
                                 mainAxisSpacing: 8,
                                 childAspectRatio: 0.75,
                               ),
-                              itemCount: binders.length + (binderPhotos['My Binder']?.length ?? 0),
+                              itemCount: binders.length + (binderPhotos['Main Grid']?.length ?? 0),
                               itemBuilder: (context, index) {
                                 // First show binders
                                 if (index < binders.length) {
                                   return _buildBinderCard(binders[index]);
                                 } 
-                                // Then show photos from My Binder
+                                // Then show photos from main grid
                                 else {
                                   final photoIndex = index - binders.length;
-                                  if (binderPhotos['My Binder'] != null && 
-                                      photoIndex < binderPhotos['My Binder']!.length) {
-                                    final photo = binderPhotos['My Binder']![photoIndex];
+                                  if (binderPhotos['Main Grid'] != null && 
+                                      photoIndex < binderPhotos['Main Grid']!.length) {
+                                    final photo = binderPhotos['Main Grid']![photoIndex];
                                     return _buildPhotoCard(photo);
                                   }
                                   return const SizedBox();
@@ -428,7 +422,7 @@ class _BindersScreenState extends State<BindersScreen> {
           context,
           MaterialPageRoute(
             builder: (context) => NotebooksScreen(
-              notebookName: 'My Notebook',
+              notebookName: 'Default Notebook',
               parentBinderName: binderName,
               parentAlbumName: widget.parentAlbumName!,
               source: PhotoSources.notebooks,

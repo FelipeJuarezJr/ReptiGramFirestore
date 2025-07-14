@@ -26,7 +26,7 @@ class AlbumsScreen extends StatefulWidget {
 }
 
 class _AlbumsScreenState extends State<AlbumsScreen> {
-  List<String> albums = ['My Album'];
+  List<String> albums = [];
   final ImagePicker _picker = ImagePicker();
   Map<String, List<PhotoData>> albumPhotos = {};
   bool _isLoading = false;
@@ -54,7 +54,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
           .get();
 
       setState(() {
-        albums = ['My Album']; // Reset to default album
+        albums = [];
         for (var doc in albumsQuery.docs) {
           final data = doc.data() as Map<String, dynamic>;
           if (data['name'] != null) {
@@ -86,11 +86,11 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
         }
       }
 
-      // Firestore: Get all photos for user
+      // Firestore: Get photos uploaded directly to albums screen (no specific album assignment)
       final photosQuery = await FirestoreService.photos
           .where('userId', isEqualTo: currentUser.uid)
           .where('source', isEqualTo: PhotoSources.albums)
-          .get();
+          .get(); // Get all photos from albums source
 
       albumPhotos.clear();
       for (var album in albums) {
@@ -116,8 +116,18 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
         // Create a ValueNotifier for this photo's like status
         _likeNotifiers[photo.id] = ValueNotifier<bool>(isLiked);
         
-        final albumName = data['albumName'] ?? 'My Album';
-        if (albumPhotos.containsKey(albumName)) {
+        final albumName = data['albumName'] ?? 'Unsorted';
+        
+        // If it's an unsorted photo, add to main grid
+        if (albumName == 'Unsorted') {
+          if (albumPhotos.containsKey('Main Grid')) {
+            albumPhotos['Main Grid']!.add(photo);
+          } else {
+            albumPhotos['Main Grid'] = [photo];
+          }
+        } 
+        // If it's assigned to a specific album, add to that album
+        else if (albumPhotos.containsKey(albumName)) {
           albumPhotos[albumName]!.add(photo);
         }
       }
@@ -301,7 +311,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                                 await FirestoreService.photos.doc(photoId).set({
                                   'url': downloadUrl,
                                   'timestamp': FieldValue.serverTimestamp(),
-                                  'albumName': 'My Album',
+                                  'albumName': 'Unsorted', // Photos go to main grid
                                   'userId': currentUser.uid,
                                   'source': PhotoSources.albums,
                                 });
@@ -335,18 +345,18 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                                 mainAxisSpacing: 8,
                                 childAspectRatio: 0.75,
                               ),
-                              itemCount: albums.length + (albumPhotos['My Album']?.length ?? 0),
+                              itemCount: albums.length + (albumPhotos['Main Grid']?.length ?? 0),
                               itemBuilder: (context, index) {
                                 // First show albums
                                 if (index < albums.length) {
                                   return _buildAlbumCard(albums[index]);
                                 } 
-                                // Then show photos from My Album
+                                // Then show photos from main grid
                                 else {
                                   final photoIndex = index - albums.length;
-                                  if (albumPhotos['My Album'] != null && 
-                                      photoIndex < albumPhotos['My Album']!.length) {
-                                    final photo = albumPhotos['My Album']![photoIndex];
+                                  if (albumPhotos['Main Grid'] != null && 
+                                      photoIndex < albumPhotos['Main Grid']!.length) {
+                                    final photo = albumPhotos['Main Grid']![photoIndex];
                                     return _buildPhotoCard(photo);
                                   }
                                   return const SizedBox();
@@ -378,7 +388,6 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
           context,
           MaterialPageRoute(
             builder: (context) => BindersScreen(
-              binderName: 'My Binder',
               parentAlbumName: albumName,
               source: PhotoSources.binders,
             ),

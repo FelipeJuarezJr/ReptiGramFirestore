@@ -38,7 +38,7 @@ class NotebooksScreen extends StatefulWidget {
 }
 
 class _NotebooksScreenState extends State<NotebooksScreen> {
-  List<String> notebooks = ['My Notebook'];
+  List<String> notebooks = [];
   final ImagePicker _picker = ImagePicker();
   Map<String, List<PhotoData>> notebookPhotos = {};
   bool _isLoading = false;
@@ -70,7 +70,7 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
           .get();
       
       setState(() {
-        notebooks = ['My Notebook']; // Start with default notebook
+        notebooks = [];
         for (var doc in query.docs) {
           final data = doc.data() as Map<String, dynamic>;
           if (data['name'] != null) {
@@ -105,20 +105,19 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
         }
       }
 
-      // Firestore: Get photos for all notebooks in this binder
+      // Firestore: Get photos uploaded directly to notebooks screen (no specific notebook assignment)
       final photosQuery = await FirestoreService.photos
           .where('userId', isEqualTo: currentUser.uid)
           .where('albumName', isEqualTo: widget.parentAlbumName)
           .where('binderName', isEqualTo: widget.parentBinderName)
-          .get();
+          .get(); // Get all photos for this binder
 
+      print('📚 Found ${photosQuery.docs.length} photos for notebook previews');
+      
       notebookPhotos.clear();
       for (var notebook in notebooks) {
         notebookPhotos[notebook] = [];
       }
-
-      // Track any new notebooks found in photos
-      Set<String> foundNotebooks = {};
 
       for (var doc in photosQuery.docs) {
         final data = doc.data() as Map<String, dynamic>;
@@ -139,26 +138,30 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
         // Create a ValueNotifier for this photo's like status
         _likeNotifiers[photo.id] = ValueNotifier<bool>(isLiked);
         
-        final notebookName = data['notebookName'] ?? 'My Notebook';
+        final notebookName = data['notebookName'] ?? 'Unsorted';
+        print('📸 Photo ${doc.id} assigned to notebook: "$notebookName"');
         
-        // Ensure the notebook exists in the map, even if it wasn't in the original list
-        if (!notebookPhotos.containsKey(notebookName)) {
-          notebookPhotos[notebookName] = [];
-          foundNotebooks.add(notebookName);
+        // If it's an unsorted photo, add to main grid
+        if (notebookName == 'Unsorted') {
+          if (notebookPhotos.containsKey('Main Grid')) {
+            notebookPhotos['Main Grid']!.add(photo);
+          } else {
+            notebookPhotos['Main Grid'] = [photo];
+          }
+        } 
+        // If it's assigned to a specific notebook, add to that notebook (dynamically create entry if needed)
+        else {
+          if (!notebookPhotos.containsKey(notebookName)) {
+            notebookPhotos[notebookName] = [];
+            print('📚 Created new notebook entry for: "$notebookName"');
+          }
+          notebookPhotos[notebookName]!.add(photo);
         }
-        
-        notebookPhotos[notebookName]!.add(photo);
       }
 
-      // If we found new notebooks in photos, add them to the notebooks list
-      if (foundNotebooks.isNotEmpty) {
-        setState(() {
-          for (var notebook in foundNotebooks) {
-            if (!notebooks.contains(notebook)) {
-              notebooks.add(notebook);
-            }
-          }
-        });
+      print('📚 Final notebookPhotos map: ${notebookPhotos.keys.toList()}');
+      for (var entry in notebookPhotos.entries) {
+        print('📚 "${entry.key}": ${entry.value.length} photos');
       }
 
       setState(() {});
@@ -290,10 +293,10 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                                   'url': downloadUrl,
                                   'timestamp': FieldValue.serverTimestamp(),
                                   'albumName': widget.parentAlbumName,
-                                  'binderName': widget.parentBinderName,
-                                  'notebookName': 'My Notebook',  // Always save to My Notebook
+                                  'binderName': widget.parentBinderName, // Assign to current binder for preview
+                                  'notebookName': 'Unsorted',  // Photos go to main grid
                                   'userId': currentUser.uid,
-                                  'source': PhotoSources.photosOnly,  // Photos from notebooks screen
+                                  'source': PhotoSources.albums,  // Photos from notebooks screen
                                 });
 
                                 Navigator.pop(context); // Hide loading indicator
@@ -325,18 +328,18 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                                 mainAxisSpacing: 8,
                                 childAspectRatio: 0.75,  // Make items slightly taller than wide
                               ),
-                              itemCount: notebooks.length + (notebookPhotos['My Notebook']?.length ?? 0),  // Show both notebooks and photos
+                              itemCount: notebooks.length + (notebookPhotos['Main Grid']?.length ?? 0),  // Show both notebooks and photos
                               itemBuilder: (context, index) {
                                 // First show notebooks
                                 if (index < notebooks.length) {
                                   return _buildNotebookCard(notebooks[index]);
                                 } 
-                                // Then show photos from My Notebook
+                                // Then show photos from main grid
                                 else {
                                   final photoIndex = index - notebooks.length;
-                                  if (notebookPhotos['My Notebook'] != null && 
-                                      photoIndex < notebookPhotos['My Notebook']!.length) {
-                                    final photo = notebookPhotos['My Notebook']![photoIndex];
+                                  if (notebookPhotos['Main Grid'] != null && 
+                                      photoIndex < notebookPhotos['Main Grid']!.length) {
+                                    final photo = notebookPhotos['Main Grid']![photoIndex];
                                     return _buildPhotoCard(photo);
                                   }
                                   return const SizedBox();
