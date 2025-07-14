@@ -417,6 +417,10 @@ class _BindersScreenState extends State<BindersScreen> {
 
   Widget _buildBinderCard(String binderName) {
     final photos = binderPhotos[binderName] ?? [];
+    print('🎯 Building binder card for "$binderName" with ${photos.length} photos');
+    if (photos.isNotEmpty) {
+      print('📸 First photo URL: ${photos[0].firebaseUrl}');
+    }
     
     return InkWell(
       onTap: () {
@@ -730,7 +734,7 @@ class _BindersScreenState extends State<BindersScreen> {
 
     String photoTitle = photo.title;
     String comment = photo.comment;
-    bool isLiked = photo.isLiked;
+    bool isLiked = _likeNotifiers[photo.id]?.value ?? photo.isLiked;
     bool hasUnsavedChanges = false;
     String originalTitle = photoTitle;
     String originalComment = comment;
@@ -956,30 +960,32 @@ class _BindersScreenState extends State<BindersScreen> {
                                   fontSize: 14,
                                 ),
                               ),
-                              IconButton(
-                                icon: Icon(
-                                  isLiked ? Icons.favorite : Icons.favorite_border,
-                                  color: isLiked ? Colors.red : Colors.white,
-                                  size: 28,
-                                ),
-                                onPressed: () async {
-                                  // Toggle like immediately
-                                  setState(() {
-                                    isLiked = !isLiked;
-                                  });
-                                  
-                                  // Update the photo object immediately
-                                  photo.isLiked = isLiked;
-                                  
-                                  // Save like to Firestore immediately
-                                  await _toggleLike(photo);
-                                  
-                                  // Update main grid view to reflect the change
-                                  this.setState(() {});
-                                  
-                                  // Update hasUnsavedChanges for other fields
-                                  hasUnsavedChanges = photoTitle != originalTitle || 
-                                                    comment != originalComment;
+                              ValueListenableBuilder<bool>(
+                                valueListenable: _likeNotifiers[photo.id] ?? ValueNotifier<bool>(isLiked),
+                                builder: (context, currentIsLiked, child) {
+                                  return IconButton(
+                                    icon: Icon(
+                                      currentIsLiked ? Icons.favorite : Icons.favorite_border,
+                                      color: currentIsLiked ? Colors.red : Colors.white,
+                                      size: 28,
+                                    ),
+                                    onPressed: () async {
+                                      // Toggle like immediately using ValueNotifier
+                                      final notifier = _likeNotifiers[photo.id];
+                                      if (notifier != null) {
+                                        notifier.value = !notifier.value;
+                                        photo.isLiked = notifier.value;
+                                        isLiked = notifier.value; // Update local state too
+                                      }
+                                      
+                                      // Save like to Firestore immediately
+                                      await _toggleLike(photo);
+                                      
+                                      // Update hasUnsavedChanges for other fields
+                                      hasUnsavedChanges = photoTitle != originalTitle || 
+                                                        comment != originalComment;
+                                    },
+                                  );
                                 },
                               ),
                             ],

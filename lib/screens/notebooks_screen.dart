@@ -55,14 +55,22 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
     });
   }
 
+
+
   Future<void> _loadNotebooks() async {
     try {
       final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
       if (currentUser == null) return;
-      // Firestore: get notebooks for user (using albums collection)
-      final query = await FirestoreService.albums.where('userId', isEqualTo: currentUser.uid).get();
+      
+      // Firestore: get notebooks for user and binder (using notebooks collection)
+      final query = await FirestoreService.notebooks
+          .where('userId', isEqualTo: currentUser.uid)
+          .where('binderName', isEqualTo: widget.parentBinderName)
+          .where('albumName', isEqualTo: widget.parentAlbumName)
+          .get();
+      
       setState(() {
-        notebooks = [widget.notebookName];
+        notebooks = ['My Notebook']; // Start with default notebook
         for (var doc in query.docs) {
           final data = doc.data() as Map<String, dynamic>;
           if (data['name'] != null) {
@@ -70,6 +78,9 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
           }
         }
       });
+      
+      print('📚 Loaded ${notebooks.length} notebooks for user ${currentUser.uid}');
+      print('📚 Notebooks: $notebooks');
     } catch (e) {
       print('Error loading notebooks: $e');
     }
@@ -79,16 +90,8 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
     setState(() => _isLoading = true);
     try {
       final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
-      if (currentUser == null) {
-        print('❌ No user found when loading photos');
-        return;
-      }
-      
-      print('🔄 Loading photos for user: ${currentUser.uid}');
-      print('📁 Looking for source: ${widget.source}');
-      print('📂 Filtering by album: ${widget.parentAlbumName}');
-      print('📂 Filtering by binder: ${widget.parentBinderName}');
-      
+      if (currentUser == null) return;
+
       // Get all likes from Firestore
       final likesQuery = await FirestoreService.likes.get();
       final likesMap = <String, Map<String, bool>>{};
@@ -101,25 +104,24 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
           likesMap[photoId]![userId] = true;
         }
       }
-      
-      final query = await FirestoreService.photos
-        .where('userId', isEqualTo: currentUser.uid)
-        .where('source', isEqualTo: PhotoSources.albums)  // All photos have source: 'albums'
-        .where('albumName', isEqualTo: widget.parentAlbumName)
-        .where('binderName', isEqualTo: widget.parentBinderName)
-        .get();
-      
-      print('📊 Found ${query.docs.length} photos in Firestore');
-      
+
+      // Firestore: Get photos for all notebooks in this binder
+      final photosQuery = await FirestoreService.photos
+          .where('userId', isEqualTo: currentUser.uid)
+          .where('albumName', isEqualTo: widget.parentAlbumName)
+          .where('binderName', isEqualTo: widget.parentBinderName)
+          .get();
+
       notebookPhotos.clear();
       for (var notebook in notebooks) {
         notebookPhotos[notebook] = [];
       }
-      
-      for (var doc in query.docs) {
+
+      // Track any new notebooks found in photos
+      Set<String> foundNotebooks = {};
+
+      for (var doc in photosQuery.docs) {
         final data = doc.data() as Map<String, dynamic>;
-        print('📄 Photo document: ${doc.id} - ${data.toString()}');
-        
         final photoLikes = likesMap[doc.id] ?? {};
         final isLiked = currentUser != null && photoLikes[currentUser.uid] == true;
         
@@ -136,16 +138,32 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
         
         // Create a ValueNotifier for this photo's like status
         _likeNotifiers[photo.id] = ValueNotifier<bool>(isLiked);
+        
         final notebookName = data['notebookName'] ?? 'My Notebook';
-        if (notebookPhotos.containsKey(notebookName)) {
-          notebookPhotos[notebookName]!.add(photo);
+        
+        // Ensure the notebook exists in the map, even if it wasn't in the original list
+        if (!notebookPhotos.containsKey(notebookName)) {
+          notebookPhotos[notebookName] = [];
+          foundNotebooks.add(notebookName);
         }
+        
+        notebookPhotos[notebookName]!.add(photo);
       }
-      
-      print('✅ Loaded ${notebookPhotos.values.fold(0, (sum, photos) => sum + photos.length)} photos total');
+
+      // If we found new notebooks in photos, add them to the notebooks list
+      if (foundNotebooks.isNotEmpty) {
+        setState(() {
+          for (var notebook in foundNotebooks) {
+            if (!notebooks.contains(notebook)) {
+              notebooks.add(notebook);
+            }
+          }
+        });
+      }
+
       setState(() {});
     } catch (e) {
-      print('❌ Error loading notebook photos: $e');
+      print('Error loading notebook photos: $e');
     } finally {
       setState(() => _isLoading = false);
     }
@@ -268,25 +286,18 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                                 print('✅ Storage upload complete. URL: $downloadUrl');
 
                                 // Firestore: Save photo with hierarchy info
-                                print('📝 Saving to Firestore...');
-                                final firestoreData = {
+                                await FirestoreService.photos.doc(photoId).set({
                                   'url': downloadUrl,
                                   'timestamp': FieldValue.serverTimestamp(),
                                   'albumName': widget.parentAlbumName,
                                   'binderName': widget.parentBinderName,
-                                  'notebookName': widget.notebookName,
+                                  'notebookName': 'My Notebook',  // Always save to My Notebook
                                   'userId': currentUser.uid,
-                                  'source': PhotoSources.albums,  // All photos should have source: 'albums'
-                                };
-                                print('📄 Firestore data: $firestoreData');
-                                
-                                await FirestoreService.photos.doc(photoId).set(firestoreData);
-                                print('✅ Firestore save complete');
+                                  'source': PhotoSources.photosOnly,  // Photos from notebooks screen
+                                });
 
                                 Navigator.pop(context); // Hide loading indicator
-                                print('🔄 Reloading photos...');
                                 await _loadNotebookPhotos(); // Reload photos
-                                print('✅ Photo upload process complete');
 
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(content: Text('Photo uploaded successfully!')),
@@ -314,30 +325,21 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                                 mainAxisSpacing: 8,
                                 childAspectRatio: 0.75,  // Make items slightly taller than wide
                               ),
-                              itemCount: notebooks.length + (notebookPhotos[widget.notebookName]?.length ?? 0),  // Show both notebooks and photos
+                              itemCount: notebooks.length + (notebookPhotos['My Notebook']?.length ?? 0),  // Show both notebooks and photos
                               itemBuilder: (context, index) {
-                                print('🔍 Building grid item $index');
-                                print('📊 Notebooks length: ${notebooks.length}');
-                                print('📸 Photos in ${widget.notebookName}: ${notebookPhotos[widget.notebookName]?.length ?? 0}');
-                                print('📄 Notebook photos map: $notebookPhotos');
-                                
                                 // First show notebooks
                                 if (index < notebooks.length) {
-                                  print('🏷️ Building notebook card for: ${notebooks[index]}');
                                   return _buildNotebookCard(notebooks[index]);
                                 } 
-                                // Then show photos
+                                // Then show photos from My Notebook
                                 else {
                                   final photoIndex = index - notebooks.length;
-                                  print('🖼️ Building photo card at index: $photoIndex');
-                                  if (notebookPhotos[widget.notebookName] != null && photoIndex < notebookPhotos[widget.notebookName]!.length) {
-                                  final photo = notebookPhotos[widget.notebookName]![photoIndex];
-                                    print('📸 Photo data: ${photo.firebaseUrl}');
-                                  return _buildPhotoCard(photo);
-                                  } else {
-                                    print('❌ No photo found at index $photoIndex');
-                                    return Container(); // Empty container if no photo
+                                  if (notebookPhotos['My Notebook'] != null && 
+                                      photoIndex < notebookPhotos['My Notebook']!.length) {
+                                    final photo = notebookPhotos['My Notebook']![photoIndex];
+                                    return _buildPhotoCard(photo);
                                   }
+                                  return const SizedBox();
                                 }
                               },
                             ),
@@ -404,16 +406,22 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                       );
                       return;
                     }
-                    // Firestore: create notebook (using albums collection)
-                    await FirestoreService.albums.add({
+                    // Firestore: create notebook (using notebooks collection)
+                    await FirestoreService.notebooks.add({
                       'name': newNotebookName,
                       'createdAt': FieldValue.serverTimestamp(),
                       'userId': currentUser.uid,
+                      'binderName': widget.parentBinderName,
+                      'albumName': widget.parentAlbumName,
                     });
+                    
+                    // Update local state
                     setState(() {
                       notebooks.add(newNotebookName);
                     });
+
                     Navigator.of(context).pop();
+                    
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Notebook created successfully!')),
                     );
@@ -437,9 +445,14 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
 
   Widget _buildNotebookCard(String notebookName) {
     final photos = notebookPhotos[notebookName] ?? [];
+    print('🎯 Building notebook card for "$notebookName" with ${photos.length} photos');
+    if (photos.isNotEmpty) {
+      print('📸 First photo URL: ${photos[0].firebaseUrl}');
+    }
+    
     return InkWell(
-      onTap: () {
-        Navigator.push(
+      onTap: () async {
+        await Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => PhotosOnlyScreen(
@@ -450,6 +463,10 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
             ),
           ),
         );
+        
+        // Refresh data when returning from PhotosOnlyScreen
+        await _loadNotebooks();
+        await _loadNotebookPhotos();
       },
       child: Container(
         decoration: BoxDecoration(
@@ -552,6 +569,8 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
       ),
     );
   }
+
+
 
   Widget _buildActionButton(String title, IconData icon, VoidCallback onTap) {
     return InkWell(
@@ -780,7 +799,7 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
 
     String photoTitle = photo.title;
     String comment = photo.comment;
-    bool isLiked = photo.isLiked;
+    bool isLiked = _likeNotifiers[photo.id]?.value ?? photo.isLiked;
     bool hasUnsavedChanges = false;
     String originalTitle = photoTitle;
     String originalComment = comment;
@@ -1028,30 +1047,32 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                                   fontSize: 14,
                                 ),
                               ),
-                              IconButton(
-                                icon: Icon(
-                                  isLiked ? Icons.favorite : Icons.favorite_border,
-                                  color: isLiked ? Colors.red : Colors.white,
-                                  size: 28,
-                                ),
-                                onPressed: () async {
-                                  // Toggle like immediately
-                                  setState(() {
-                                    isLiked = !isLiked;
-                                  });
-                                  
-                                  // Update the photo object immediately
-                                  photo.isLiked = isLiked;
-                                  
-                                  // Save like to Firestore immediately
-                                  await _toggleLike(photo);
-                                  
-                                  // Update main grid view to reflect the change
-                                  this.setState(() {});
-                                  
-                                  // Update hasUnsavedChanges for other fields
-                                  hasUnsavedChanges = photoTitle != originalTitle || 
-                                                    comment != originalComment;
+                              ValueListenableBuilder<bool>(
+                                valueListenable: _likeNotifiers[photo.id] ?? ValueNotifier<bool>(isLiked),
+                                builder: (context, currentIsLiked, child) {
+                                  return IconButton(
+                                    icon: Icon(
+                                      currentIsLiked ? Icons.favorite : Icons.favorite_border,
+                                      color: currentIsLiked ? Colors.red : Colors.white,
+                                      size: 28,
+                                    ),
+                                    onPressed: () async {
+                                      // Toggle like immediately using ValueNotifier
+                                      final notifier = _likeNotifiers[photo.id];
+                                      if (notifier != null) {
+                                        notifier.value = !notifier.value;
+                                        photo.isLiked = notifier.value;
+                                        isLiked = notifier.value; // Update local state too
+                                      }
+                                      
+                                      // Save like to Firestore immediately
+                                      await _toggleLike(photo);
+                                      
+                                      // Update hasUnsavedChanges for other fields
+                                      hasUnsavedChanges = photoTitle != originalTitle || 
+                                                        comment != originalComment;
+                                    },
+                                  );
                                 },
                               ),
                             ],

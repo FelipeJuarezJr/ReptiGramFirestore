@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../styles/colors.dart';
 import '../common/header.dart';
 import '../common/title_header.dart';
-import '../screens/binders_screen.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:provider/provider.dart';
@@ -12,6 +11,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../models/photo_data.dart';
 import '../utils/photo_utils.dart';
+import '../screens/binders_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
 import '../constants/photo_sources.dart';
@@ -19,8 +19,7 @@ import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 
 class AlbumsScreen extends StatefulWidget {
-  final String source;
-  const AlbumsScreen({super.key, this.source = PhotoSources.albums});
+  const AlbumsScreen({super.key});
 
   @override
   State<AlbumsScreen> createState() => _AlbumsScreenState();
@@ -48,11 +47,15 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
     try {
       final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
       if (currentUser == null) return;
-      // Firestore: get albums for user
-      final query = await FirestoreService.albums.where('userId', isEqualTo: currentUser.uid).get();
+
+      // Firestore: Get albums for user
+      final albumsQuery = await FirestoreService.albums
+          .where('userId', isEqualTo: currentUser.uid)
+          .get();
+
       setState(() {
-        albums = ['My Album'];
-        for (var doc in query.docs) {
+        albums = ['My Album']; // Reset to default album
+        for (var doc in albumsQuery.docs) {
           final data = doc.data() as Map<String, dynamic>;
           if (data['name'] != null) {
             albums.add(data['name']);
@@ -68,14 +71,8 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
     setState(() => _isLoading = true);
     try {
       final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
-      if (currentUser == null) {
-        print('❌ No user found when loading photos');
-        return;
-      }
-      
-      print('🔄 Loading photos for user: ${currentUser.uid}');
-      print('📁 Looking for source: ${widget.source}');
-      
+      if (currentUser == null) return;
+
       // Get all likes from Firestore
       final likesQuery = await FirestoreService.likes.get();
       final likesMap = <String, Map<String, bool>>{};
@@ -88,23 +85,20 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
           likesMap[photoId]![userId] = true;
         }
       }
-      
-      final query = await FirestoreService.photos
-        .where('userId', isEqualTo: currentUser.uid)
-        .where('source', isEqualTo: widget.source)
-        .get();
-      
-      print('📊 Found ${query.docs.length} photos in Firestore');
-      
+
+      // Firestore: Get all photos for user
+      final photosQuery = await FirestoreService.photos
+          .where('userId', isEqualTo: currentUser.uid)
+          .where('source', isEqualTo: PhotoSources.albums)
+          .get();
+
       albumPhotos.clear();
       for (var album in albums) {
         albumPhotos[album] = [];
       }
-      
-      for (var doc in query.docs) {
+
+      for (var doc in photosQuery.docs) {
         final data = doc.data() as Map<String, dynamic>;
-        print('📄 Photo document: ${doc.id} - ${data.toString()}');
-        
         final photoLikes = likesMap[doc.id] ?? {};
         final isLiked = currentUser != null && photoLikes[currentUser.uid] == true;
         
@@ -121,194 +115,19 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
         
         // Create a ValueNotifier for this photo's like status
         _likeNotifiers[photo.id] = ValueNotifier<bool>(isLiked);
+        
         final albumName = data['albumName'] ?? 'My Album';
         if (albumPhotos.containsKey(albumName)) {
           albumPhotos[albumName]!.add(photo);
         }
       }
-      
-      print('✅ Loaded ${albumPhotos.values.fold(0, (sum, photos) => sum + photos.length)} photos total');
+
       setState(() {});
     } catch (e) {
-      print('❌ Error loading album photos: $e');
+      print('Error loading album photos: $e');
     } finally {
       setState(() => _isLoading = false);
     }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        height: MediaQuery.of(context).size.height,
-        decoration: const BoxDecoration(
-          gradient: AppColors.mainGradient,
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              const TitleHeader(),
-              const Header(initialIndex: 1),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 60.0),
-                      // Action Buttons at the top
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _buildActionButton(
-                            'Create Album',
-                            Icons.create_new_folder,
-                            () {
-                              _createNewAlbum();
-                            },
-                          ),
-                          _buildActionButton(
-                            'Add Image',
-                            Icons.add_photo_alternate,
-                            () async {
-                              final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
-                              if (currentUser == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Please log in to upload photos')),
-                                );
-                                return;
-                              }
-
-                              try {
-                                final XFile? pickedFile = await _picker.pickImage(
-                                  source: ImageSource.gallery,
-                                  imageQuality: 85,
-                                );
-
-                                if (pickedFile == null) return;
-
-                                showDialog(
-                                  context: context,
-                                  barrierDismissible: false,
-                                  builder: (BuildContext context) {
-                                    return const Center(
-                                      child: CircularProgressIndicator(),
-                                    );
-                                  },
-                                );
-
-                                final String photoId = DateTime.now().millisecondsSinceEpoch.toString();
-                                print('🔄 Starting upload for photo ID: $photoId');
-                                print('👤 User ID: ${currentUser.uid}');
-                                print('📁 Source: ${widget.source}');
-                                
-                                final storageRef = FirebaseStorage.instance
-                                    .ref()
-                                    .child('photos')
-                                    .child(currentUser.uid)
-                                    .child(photoId);
-                                
-                                print('📂 Storage path: photos/${currentUser.uid}/$photoId');
-
-                                if (kIsWeb) {
-                                  final bytes = await pickedFile.readAsBytes();
-                                  print('📤 Uploading ${bytes.length} bytes to Storage...');
-                                  await storageRef.putData(
-                                    bytes,
-                                    SettableMetadata(contentType: 'image/jpeg'),
-                                  );
-                                } else {
-                                  print('📤 Uploading file to Storage...');
-                                  await storageRef.putFile(
-                                    File(pickedFile.path),
-                                    SettableMetadata(contentType: 'image/jpeg'),
-                                  );
-                                }
-
-                                final downloadUrl = await storageRef.getDownloadURL();
-                                print('✅ Storage upload complete. URL: $downloadUrl');
-
-                                // Firestore: Save photo with hierarchy info
-                                print('📝 Saving to Firestore...');
-                                final firestoreData = {
-                                  'url': downloadUrl,
-                                  'timestamp': FieldValue.serverTimestamp(),
-                                  'albumName': 'My Album',
-                                  'userId': currentUser.uid,
-                                  'source': widget.source,
-                                };
-                                print('📄 Firestore data: $firestoreData');
-                                
-                                await FirestoreService.photos.doc(photoId).set(firestoreData);
-                                print('✅ Firestore save complete');
-
-                                Navigator.pop(context); // Hide loading indicator
-                                print('🔄 Reloading photos...');
-                                await _loadAlbumPhotos(); // Reload photos
-                                print('✅ Photo upload process complete');
-
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Photo uploaded successfully!')),
-                                );
-                              } catch (e) {
-                                print('Error uploading photo: $e');
-                                Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Failed to upload photo: ${e.toString()}')),
-                                );
-                              }
-                            },
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 74),
-                      // Albums Grid below
-                      Expanded(
-                        child: _isLoading && albumPhotos.isEmpty
-                          ? const Center(child: CircularProgressIndicator())
-                          : GridView.builder(
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 3,  // 3 items per row
-                                crossAxisSpacing: 8,
-                                mainAxisSpacing: 8,
-                                childAspectRatio: 0.75,  // Make items slightly taller than wide
-                              ),
-                              itemCount: albums.length + (albumPhotos['My Album']?.length ?? 0),  // Show both albums and photos
-                              itemBuilder: (context, index) {
-                                print('🔍 Building grid item $index');
-                                print('📊 Albums length: ${albums.length}');
-                                print('📸 Photos in My Album: ${albumPhotos['My Album']?.length ?? 0}');
-                                print('📄 Album photos map: $albumPhotos');
-                                
-                                // First show albums
-                                if (index < albums.length) {
-                                  print('🏷️ Building album card for: ${albums[index]}');
-                                  return _buildAlbumCard(albums[index]);
-                                } 
-                                // Then show photos
-                                else {
-                                  final photoIndex = index - albums.length;
-                                  print('🖼️ Building photo card at index: $photoIndex');
-                                  if (albumPhotos['My Album'] != null && photoIndex < albumPhotos['My Album']!.length) {
-                                  final photo = albumPhotos['My Album']![photoIndex];
-                                    print('📸 Photo data: ${photo.firebaseUrl}');
-                                  return _buildPhotoCard(photo);
-                                  } else {
-                                    print('❌ No photo found at index $photoIndex');
-                                    return Container(); // Empty container if no photo
-                                  }
-                                }
-                              },
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   void _createNewAlbum() {
@@ -360,16 +179,21 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                       );
                       return;
                     }
-                    // Firestore: create album
+
+                    // Firestore: Create album
                     await FirestoreService.albums.add({
                       'name': newAlbumName,
                       'createdAt': FieldValue.serverTimestamp(),
                       'userId': currentUser.uid,
                     });
+
+                    // Update local state
                     setState(() {
                       albums.add(newAlbumName);
                     });
+
                     Navigator.of(context).pop();
+                    
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Album created successfully!')),
                     );
@@ -391,8 +215,163 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
     );
   }
 
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        height: MediaQuery.of(context).size.height,
+        decoration: const BoxDecoration(
+          gradient: AppColors.mainGradient,
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              const TitleHeader(),
+              const Header(initialIndex: 0),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 20.0),
+                      // Action Buttons at the top
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          _buildActionButton(
+                            'Create Album',
+                            Icons.create_new_folder,
+                            () {
+                              _createNewAlbum();
+                            },
+                          ),
+                          _buildActionButton(
+                            'Add Image',
+                            Icons.add_photo_alternate,
+                            () async {
+                              final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
+                              if (currentUser == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Please log in to upload photos')),
+                                );
+                                return;
+                              }
+
+                              try {
+                                final XFile? pickedFile = await _picker.pickImage(
+                                  source: ImageSource.gallery,
+                                  imageQuality: 85,
+                                );
+
+                                if (pickedFile == null) return;
+
+                                showDialog(
+                                  context: context,
+                                  barrierDismissible: false,
+                                  builder: (BuildContext context) {
+                                    return const Center(
+                                      child: CircularProgressIndicator(),
+                                    );
+                                  },
+                                );
+
+                                final String photoId = DateTime.now().millisecondsSinceEpoch.toString();
+                                final storageRef = FirebaseStorage.instance
+                                    .ref()
+                                    .child('photos')
+                                    .child(currentUser.uid)
+                                    .child(photoId);
+
+                                if (kIsWeb) {
+                                  final bytes = await pickedFile.readAsBytes();
+                                  await storageRef.putData(
+                                    bytes,
+                                    SettableMetadata(contentType: 'image/jpeg'),
+                                  );
+                                } else {
+                                  await storageRef.putFile(
+                                    File(pickedFile.path),
+                                    SettableMetadata(contentType: 'image/jpeg'),
+                                  );
+                                }
+
+                                final downloadUrl = await storageRef.getDownloadURL();
+
+                                // Firestore: Save photo with hierarchy info
+                                await FirestoreService.photos.doc(photoId).set({
+                                  'url': downloadUrl,
+                                  'timestamp': FieldValue.serverTimestamp(),
+                                  'albumName': 'My Album',
+                                  'userId': currentUser.uid,
+                                  'source': PhotoSources.albums,
+                                });
+
+                                Navigator.pop(context); // Hide loading indicator
+                                await _loadAlbumPhotos(); // Reload photos
+
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Photo uploaded successfully!')),
+                                );
+                              } catch (e) {
+                                print('Error uploading photo: $e');
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Failed to upload photo: ${e.toString()}')),
+                                );
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 74),
+                      // Albums and Photos Grid
+                      Expanded(
+                        child: _isLoading && albumPhotos.isEmpty
+                          ? const Center(child: CircularProgressIndicator())
+                          : GridView.builder(
+                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 3,
+                                crossAxisSpacing: 8,
+                                mainAxisSpacing: 8,
+                                childAspectRatio: 0.75,
+                              ),
+                              itemCount: albums.length + (albumPhotos['My Album']?.length ?? 0),
+                              itemBuilder: (context, index) {
+                                // First show albums
+                                if (index < albums.length) {
+                                  return _buildAlbumCard(albums[index]);
+                                } 
+                                // Then show photos from My Album
+                                else {
+                                  final photoIndex = index - albums.length;
+                                  if (albumPhotos['My Album'] != null && 
+                                      photoIndex < albumPhotos['My Album']!.length) {
+                                    final photo = albumPhotos['My Album']![photoIndex];
+                                    return _buildPhotoCard(photo);
+                                  }
+                                  return const SizedBox();
+                                }
+                              },
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildAlbumCard(String albumName) {
     final photos = albumPhotos[albumName] ?? [];
+    print('🎯 Building album card for "$albumName" with ${photos.length} photos');
+    if (photos.isNotEmpty) {
+      print('📸 First photo URL: ${photos[0].firebaseUrl}');
+    }
+    
     return InkWell(
       onTap: () {
         Navigator.push(
@@ -427,6 +406,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                   builder: (context, constraints) {
                     return Column(
                       children: [
+                        // Large image on top
                         if (photos.isNotEmpty)
                           Expanded(
                             flex: 2,
@@ -440,8 +420,17 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                                   child: const Icon(Icons.broken_image, color: Colors.grey),
                                 );
                               },
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) {
+                                  return child;
+                                }
+                                return Container(
+                                  color: Colors.grey[300],
+                                );
+                              },
                             ),
                           ),
+                        // Three smaller images below
                         if (photos.length > 1)
                           Expanded(
                             flex: 1,
@@ -458,8 +447,17 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                                           child: const Icon(Icons.broken_image, color: Colors.grey),
                                         );
                                       },
+                                      loadingBuilder: (context, child, loadingProgress) {
+                                        if (loadingProgress == null) {
+                                          return child;
+                                        }
+                                        return Container(
+                                          color: Colors.grey[300],
+                                        );
+                                      },
                                     ),
                                   ),
+                                // Fill remaining space with empty containers if needed
                                 for (var i = photos.length; i < 4; i++)
                                   Expanded(
                                     child: Container(
@@ -474,6 +472,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                   },
                 ),
               ),
+            // Album name overlay
             Positioned(
               bottom: 0,
               left: 0,
@@ -584,9 +583,9 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                   if (snapshot.hasData && snapshot.data != null) {
                     return Image.memory(
                       snapshot.data!,
-                fit: BoxFit.cover,
-                width: double.infinity,
-                height: double.infinity,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      height: double.infinity,
                       errorBuilder: (context, error, stackTrace) {
                         print('❌ Memory image error: $error');
                         return _buildFallbackImage(photo.firebaseUrl!);
@@ -598,6 +597,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                 },
               ),
             ),
+            // Title overlay
             Positioned(
               top: 0,
               left: 0,
@@ -630,6 +630,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                 ),
               ),
             ),
+            // Like icon
             Positioned(
               bottom: 8,
               right: 8,
@@ -670,56 +671,36 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
     );
   }
 
-  Widget _buildFallbackImage(String url) {
-    return Image.network(
-      url,
-      fit: BoxFit.cover,
-      width: double.infinity,
-      height: double.infinity,
-      loadingBuilder: (context, child, loadingProgress) {
-        if (loadingProgress == null) {
-          return child;
-        }
-        return Container(
-          color: Colors.grey[300],
-        );
-      },
-      errorBuilder: (context, error, stackTrace) {
-        print('❌ Network image error: $error');
-        print('🔗 Failed URL: $url');
-        return Container(
-          color: Colors.grey[300],
-          child: const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.broken_image, color: Colors.grey),
-                SizedBox(height: 8),
-                Text('Image failed to load', style: TextStyle(color: Colors.grey, fontSize: 12)),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Future<Uint8List?> _loadImageBytes(String url) async {
+  Future<Uint8List?> _loadImageBytes(String imageUrl) async {
     try {
-      print('🔄 Loading image bytes from: $url');
-      final response = await http.get(Uri.parse(url));
-      
+      print('🔄 Loading image bytes from: $imageUrl');
+      final response = await http.get(Uri.parse(imageUrl));
       if (response.statusCode == 200) {
         print('✅ Image bytes loaded successfully: ${response.bodyBytes.length} bytes');
         return response.bodyBytes;
       } else {
-        print('❌ HTTP error: ${response.statusCode}');
+        print('❌ Failed to load image: ${response.statusCode}');
         return null;
       }
     } catch (e) {
       print('❌ Error loading image bytes: $e');
       return null;
     }
+  }
+
+  Widget _buildFallbackImage(String imageUrl) {
+    return Image.network(
+      imageUrl,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+      errorBuilder: (context, error, stackTrace) {
+        return Container(
+          color: Colors.grey[300],
+          child: const Icon(Icons.broken_image, color: Colors.grey),
+        );
+      },
+    );
   }
 
   void _showEnlargedImage(PhotoData photo) {
@@ -735,7 +716,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
 
     String photoTitle = photo.title;
     String comment = photo.comment;
-    bool isLiked = photo.isLiked;
+    bool isLiked = _likeNotifiers[photo.id]?.value ?? photo.isLiked;
     bool hasUnsavedChanges = false;
     String originalTitle = photoTitle;
     String originalComment = comment;
@@ -912,28 +893,6 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                         child: Image.network(
                           photo.firebaseUrl!,
                           fit: BoxFit.contain,
-                          loadingBuilder: (context, child, loadingProgress) {
-                            if (loadingProgress == null) {
-                              return child;
-                            }
-                            return child; // Show the image immediately, no loading state
-                          },
-                          errorBuilder: (context, error, stackTrace) {
-                            print('❌ Enlarged network image error: $error');
-                            return Container(
-                              color: Colors.grey[300],
-                              child: const Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.broken_image, color: Colors.grey),
-                                    SizedBox(height: 8),
-                                    Text('Image failed to load', style: TextStyle(color: Colors.grey)),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
                         ),
                       ),
                     ),
@@ -983,30 +942,32 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                                   fontSize: 14,
                                 ),
                               ),
-                              IconButton(
-                                icon: Icon(
-                                  isLiked ? Icons.favorite : Icons.favorite_border,
-                                  color: isLiked ? Colors.red : Colors.white,
-                                  size: 28,
-                                ),
-                                onPressed: () async {
-                                  // Toggle like immediately
-                                  setState(() {
-                                    isLiked = !isLiked;
-                                  });
-                                  
-                                  // Update the photo object immediately
-                                  photo.isLiked = isLiked;
-                                  
-                                  // Save like to Firestore immediately
-                                  await _toggleLike(photo);
-                                  
-                                  // Update main grid view to reflect the change
-                                  this.setState(() {});
-                                  
-                                  // Update hasUnsavedChanges for other fields
-                                  hasUnsavedChanges = photoTitle != originalTitle || 
-                                                    comment != originalComment;
+                              ValueListenableBuilder<bool>(
+                                valueListenable: _likeNotifiers[photo.id] ?? ValueNotifier<bool>(isLiked),
+                                builder: (context, currentIsLiked, child) {
+                                  return IconButton(
+                                    icon: Icon(
+                                      currentIsLiked ? Icons.favorite : Icons.favorite_border,
+                                      color: currentIsLiked ? Colors.red : Colors.white,
+                                      size: 28,
+                                    ),
+                                    onPressed: () async {
+                                      // Toggle like immediately using ValueNotifier
+                                      final notifier = _likeNotifiers[photo.id];
+                                      if (notifier != null) {
+                                        notifier.value = !notifier.value;
+                                        photo.isLiked = notifier.value;
+                                        isLiked = notifier.value; // Update local state too
+                                      }
+                                      
+                                      // Save like to Firestore immediately
+                                      await _toggleLike(photo);
+                                      
+                                      // Update hasUnsavedChanges for other fields
+                                      hasUnsavedChanges = photoTitle != originalTitle || 
+                                                        comment != originalComment;
+                                    },
+                                  );
                                 },
                               ),
                             ],
@@ -1058,52 +1019,16 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
     );
   }
 
-  Widget _buildEnlargedFallbackImage(String url) {
-    return Image.network(
-      url,
-      fit: BoxFit.cover,
-      width: double.infinity,
-      height: double.infinity,
-      loadingBuilder: (context, child, loadingProgress) {
-        if (loadingProgress == null) {
-          return child;
-        }
-        return Container(
-          color: Colors.grey[300],
-        );
-      },
-      errorBuilder: (context, error, stackTrace) {
-        print('❌ Network image error: $error');
-        print('🔗 Failed URL: $url');
-        return Container(
-          color: Colors.grey[300],
-          child: const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.broken_image, color: Colors.grey),
-                SizedBox(height: 8),
-                Text('Image failed to load', style: TextStyle(color: Colors.grey)),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   Future<void> _toggleLike(PhotoData photo) async {
     try {
-      final userId = FirebaseAuth.instance.currentUser?.uid;
-      if (userId == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please log in to like photos')),
-        );
-        return;
-      }
+      final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
+      if (currentUser == null) return;
 
-      // Firestore: Toggle like
-      if (photo.isLiked) {
+      final userId = currentUser.uid;
+      final isLiked = photo.isLiked;
+
+      if (!isLiked) {
+        // Add like
         await FirestoreService.likes.add({
           'photoId': photo.id,
           'userId': userId,

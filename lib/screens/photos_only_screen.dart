@@ -492,11 +492,11 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
 
     String photoTitle = photo.title;
     String comment = photo.comment;
-    bool isLiked = photo.isLiked;  // Get initial like status
+    bool isLiked = _likeNotifiers[photo.id]?.value ?? photo.isLiked;
     bool hasUnsavedChanges = false;
     String originalTitle = photoTitle;
     String originalComment = comment;
-    bool originalIsLiked = isLiked;  // Store original like status
+    bool originalIsLiked = isLiked;
     
     // Create a TextEditingController
     final TextEditingController commentController = TextEditingController(text: comment);
@@ -712,30 +712,32 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
                                   fontSize: 14,
                                 ),
                               ),
-                              IconButton(
-                                icon: Icon(
-                                  isLiked ? Icons.favorite : Icons.favorite_border,
-                                  color: isLiked ? Colors.red : Colors.white,
-                                  size: 28,
-                                ),
-                                onPressed: () async {
-                                  // Toggle like immediately
-                                  setState(() {
-                                    isLiked = !isLiked;
-                                  });
-                                  
-                                  // Update the photo object immediately
-                                  photo.isLiked = isLiked;
-                                  
-                                  // Save like to Firestore immediately
-                                  await _toggleLike(photo);
-                                  
-                                  // Update main grid view to reflect the change
-                                  this.setState(() {});
-                                  
-                                  // Update hasUnsavedChanges for other fields
-                                  hasUnsavedChanges = photoTitle != originalTitle || 
-                                                    comment != originalComment;
+                              ValueListenableBuilder<bool>(
+                                valueListenable: _likeNotifiers[photo.id] ?? ValueNotifier<bool>(isLiked),
+                                builder: (context, currentIsLiked, child) {
+                                  return IconButton(
+                                    icon: Icon(
+                                      currentIsLiked ? Icons.favorite : Icons.favorite_border,
+                                      color: currentIsLiked ? Colors.red : Colors.white,
+                                      size: 28,
+                                    ),
+                                    onPressed: () async {
+                                      // Toggle like immediately using ValueNotifier
+                                      final notifier = _likeNotifiers[photo.id];
+                                      if (notifier != null) {
+                                        notifier.value = !notifier.value;
+                                        photo.isLiked = notifier.value;
+                                        isLiked = notifier.value; // Update local state too
+                                      }
+                                      
+                                      // Save like to Firestore immediately
+                                      await _toggleLike(photo);
+                                      
+                                      // Update hasUnsavedChanges for other fields
+                                      hasUnsavedChanges = photoTitle != originalTitle || 
+                                                        comment != originalComment;
+                                    },
+                                  );
                                 },
                               ),
                             ],
