@@ -3,6 +3,7 @@ service-account-key.json
 service-account-key-rtdb.json
 *-service-account-key.json
 firebase-service-account.json
+serviceAccountKey.json
 
 # Node.js
 node_modules/
