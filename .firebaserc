@@ -1,0 +1,17 @@
+{
+  "projects": {
+    "default": "reptigramfirestore"
+  },
+  "targets": {
+    "reptigramfirestore": {
+      "hosting": {
+        "reptigramfirestore": [
+          "reptigramfirestore"
+        ],
+        "reptigram": [
+          "reptigram"
+        ]
+      }
+    }
+  }
+} 
