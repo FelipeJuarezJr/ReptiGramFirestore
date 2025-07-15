@@ -19,21 +19,35 @@
   
   <!-- <meta name="google-signin-client_id" content="1023144692222-esbccs6kiu7d5qtnq4vp502cms2sq9hb.apps.googleusercontent.com" /> -->
 
-   <!-- Firebase SDK - Removed as Flutter handles Firebase -->
-   <!-- <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script> -->
-   <!-- <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script> -->
-   <!-- <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script> -->
-   <!-- <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script> -->
-   <!-- <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics-compat.js"></script> -->
+  <!-- Firebase SDK - Manual initialization for hosting compatibility -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging-compat.js"></script>
 
   <script>
-    // Firebase config will be handled by Flutter
-    // No need to initialize here as Flutter handles it
+    // Firebase configuration - matches firebase_options.dart
+    const firebaseConfig = {
+      apiKey: "AIzaSyBevZO-43EmlnYOhTWg_xT6UcwrmVAkSsc",
+      authDomain: "reptigramfirestore.firebaseapp.com",
+      projectId: "reptigramfirestore",
+      storageBucket: "reptigramfirestore.firebasestorage.app",
+      messagingSenderId: "373955522567",
+      appId: "1:373955522567:android:b4650d05f0f8b4295bbaa2",
+      measurementId: "G-XHBMWC2VD6",
+      databaseURL: "https://reptigramfirestore-default-rtdb.firebaseio.com"
+    };
+    
+    // Initialize Firebase manually to ensure it's available before Flutter loads
+    firebase.initializeApp(firebaseConfig);
+    console.log('✅ Firebase initialized in HTML');
   </script>
 
   <script>
     // The value below is injected by flutter build, do not touch.
-    const serviceWorkerVersion = "3268002150";
+    const serviceWorkerVersion = "1120250588";
   </script>
   <!-- This script adds the flutter initialization JS code -->
   <script src="flutter.js" defer></script>

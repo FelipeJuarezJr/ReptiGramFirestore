@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -22,14 +23,28 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Check if Firebase is already initialized
-  if (Firebase.apps.isEmpty) {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+  // For web, Firebase is initialized in HTML, so we don't need to initialize again
+  if (!kIsWeb) {
+    // Check if Firebase is already initialized
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    } else {
+      // Firebase is already initialized, use the existing app
+      Firebase.app();
+    }
   } else {
-    // Firebase is already initialized, use the existing app
-    Firebase.app();
+    // On web, Firebase is initialized in HTML, just ensure we can access it
+    try {
+      Firebase.app();
+      print('✅ Firebase already initialized in HTML');
+    } catch (e) {
+      print('⚠️ Firebase not found, initializing in Dart...');
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    }
   }
 
   // 🔍 AUDIT: Verify Firebase configuration on startup
