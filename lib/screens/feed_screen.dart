@@ -537,6 +537,48 @@ class _FeedScreenState extends State<FeedScreen> {
                 ),
               ),
             ),
+            // Comments overlay at the bottom
+            Positioned(
+              bottom: 4,
+              left: 4,
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirestoreService.comments
+                    .where('photoId', isEqualTo: photo.id)
+                    .limit(100)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  final commentCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+                  final comments = snapshot.hasData ? snapshot.data!.docs : <QueryDocumentSnapshot>[];
+                  
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.comment,
+                          color: Colors.white,
+                          size: 14,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '$commentCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
           ],
         ),
       ),
@@ -681,6 +723,21 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
   final ScrollController _scrollController = ScrollController();
 
   @override
+  void initState() {
+    super.initState();
+    // Scroll to bottom after the widget is built to show newest comments
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _commentController.dispose();
     _scrollController.dispose();
@@ -688,6 +745,7 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
   }
 
   Future<void> _postComment(String content) async {
+    print('Posting comment: $content');
     final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
     if (currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -699,22 +757,26 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
     if (content.trim().isEmpty) return;
 
     try {
+      print('Adding comment to Firestore for photo: ${widget.photo.id}');
       // Firestore: Add comment
-      await FirestoreService.comments.add({
+      final docRef = await FirestoreService.comments.add({
         'photoId': widget.photo.id,
         'userId': currentUser.uid,
         'content': content.trim(),
         'timestamp': FieldValue.serverTimestamp(),
       });
+      print('Comment added successfully with ID: ${docRef.id}');
 
       _commentController.clear();
       
-      // Scroll to top after posting
-      _scrollController.animateTo(
-        0,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
+      // Scroll to bottom to show the new comment - only if controller is attached
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
     } catch (e) {
       print('Error posting comment: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -739,34 +801,66 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
-                Text(
-                  '${widget.photo.likesCount}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                InkWell(
-                  onTap: () {
-                    final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
-                    if (currentUser == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Please log in to like photos')),
-                      );
-                      return;
-                    }
-                    widget.onLikeToggled(widget.photo);
-                    setState(() {}); // Refresh UI after toggle
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.all(4.0),
-                    child: Icon(
-                      widget.photo.isLiked ? Icons.favorite : Icons.favorite_border,
-                      color: widget.photo.isLiked ? Colors.red : Colors.white,
-                      size: 24,
+                // Likes count
+                Row(
+                  children: [
+                    Text(
+                      '${widget.photo.likesCount}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: () {
+                        final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
+                        if (currentUser == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Please log in to like photos')),
+                          );
+                          return;
+                        }
+                        widget.onLikeToggled(widget.photo);
+                        setState(() {}); // Refresh UI after toggle
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(4.0),
+                        child: Icon(
+                          widget.photo.isLiked ? Icons.favorite : Icons.favorite_border,
+                          color: widget.photo.isLiked ? Colors.red : Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 16),
+                // Comments count
+                StreamBuilder<QuerySnapshot>(
+                  stream: FirestoreService.comments
+                      .where('photoId', isEqualTo: widget.photo.id)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    final commentCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+                    return Row(
+                      children: [
+                        Text(
+                          '$commentCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.comment,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ],
             ),
@@ -795,39 +889,106 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
           ),
           // Comments section
           Container(
-            height: MediaQuery.of(context).size.height * 0.3,
+            height: MediaQuery.of(context).size.height * 0.4,
             decoration: const BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
             ),
             child: Column(
               children: [
+                // Comments header
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.comment, color: Colors.brown),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Comments',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.brown,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 Expanded(
                   child: StreamBuilder<QuerySnapshot>(
                     stream: FirestoreService.comments
                         .where('photoId', isEqualTo: widget.photo.id)
-                        .orderBy('timestamp', descending: true)
                         .limit(100)
                         .snapshots(),
                     builder: (context, snapshot) {
+                      print('Comments snapshot: ${snapshot.hasData}');
+                      if (snapshot.hasData) {
+                        print('Comments count: ${snapshot.data!.docs.length}');
+                        print('Snapshot connection state: ${snapshot.connectionState}');
+                        for (var doc in snapshot.data!.docs) {
+                          print('Comment data: ${doc.data()}');
+                        }
+                      }
+                      
+                      // Show loading while waiting for data
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(
+                          child: CircularProgressIndicator(),
+                        );
+                      }
+                      
+                      // Show error if there's an error
+                      if (snapshot.hasError) {
+                        print('Comments error: ${snapshot.error}');
+                        return Center(
+                          child: Text(
+                            'Error loading comments: ${snapshot.error}',
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                        );
+                      }
+                      
                       if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                        return const Center(child: Text('No comments yet'));
+                        print('No comments to display!');
+                        return const Center(
+                          child: Text(
+                            'No comments yet',
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontSize: 16,
+                            ),
+                          ),
+                        );
                       }
 
                       final commentsList = snapshot.data!.docs.map((doc) {
                         final data = doc.data() as Map<String, dynamic>;
+                        print('Processing comment: $data');
+                        
+                        // Handle timestamp more robustly
+                        int timestamp;
+                        if (data['timestamp'] is Timestamp) {
+                          timestamp = (data['timestamp'] as Timestamp).millisecondsSinceEpoch;
+                        } else if (data['timestamp'] is int) {
+                          timestamp = data['timestamp'] as int;
+                        } else {
+                          timestamp = DateTime.now().millisecondsSinceEpoch;
+                        }
+                        
                         return {
-                          'userId': data['userId'] as String,
-                          'content': data['content'] as String,
-                          'timestamp': data['timestamp'] is Timestamp 
-                              ? (data['timestamp'] as Timestamp).millisecondsSinceEpoch
-                              : data['timestamp'] as int,
+                          'userId': data['userId'] as String? ?? 'unknown',
+                          'content': data['content'] as String? ?? '',
+                          'timestamp': timestamp,
                         };
-                      }).toList();
+                      }).toList()
+                        ..sort((a, b) => (a['timestamp'] as int).compareTo(b['timestamp'] as int)); // Sort oldest first
 
                       return ListView.builder(
                         controller: _scrollController,
-                        reverse: true,
                         padding: const EdgeInsets.only(bottom: 8),
                         physics: const AlwaysScrollableScrollPhysics(),
                         itemCount: commentsList.length,
@@ -837,14 +998,45 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
                             future: Provider.of<AppState>(context, listen: false)
                                 .fetchUsername(comment['userId'] as String),
                             builder: (context, usernameSnapshot) {
-                              return ListTile(
-                                title: Text(
-                                  '${usernameSnapshot.data ?? 'Loading...'}: ${comment['content']}',
-                                  style: const TextStyle(color: Colors.brown),
+                              return Container(
+                                margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[100],
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
-                                subtitle: Text(
-                                  _formatTimestamp(comment['timestamp'] as int),
-                                  style: TextStyle(color: Colors.brown[400]),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          usernameSnapshot.data ?? 'Loading...',
+                                          style: const TextStyle(
+                                            color: Colors.brown,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        const Spacer(),
+                                        Text(
+                                          _formatTimestamp(comment['timestamp'] as int),
+                                          style: TextStyle(
+                                            color: Colors.brown[400],
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      comment['content'] as String,
+                                      style: const TextStyle(
+                                        color: Colors.black87,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               );
                             },
