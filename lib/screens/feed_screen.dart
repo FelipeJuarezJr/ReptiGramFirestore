@@ -721,6 +721,7 @@ class FullScreenPhotoView extends StatefulWidget {
 class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
   final TextEditingController _commentController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final Map<String, String?> _avatarUrls = {}; // Cache for avatar URLs
 
   @override
   void initState() {
@@ -742,6 +743,59 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
     _commentController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<String?> _getAvatarUrl(String userId) async {
+    if (_avatarUrls.containsKey(userId)) {
+      return _avatarUrls[userId];
+    }
+    
+    try {
+      // Get photo URL from Firestore (includes both custom uploads and Google profile URLs)
+      final url = await FirestoreService.getUserPhotoUrl(userId);
+      
+      if (mounted) {
+        setState(() {
+          _avatarUrls[userId] = url;
+        });
+      }
+      return url;
+    } catch (e) {
+      print('Error fetching avatar for user $userId: $e');
+      return null;
+    }
+  }
+
+  Widget _buildUserAvatar(String userId) {
+    return FutureBuilder<String?>(
+      future: _getAvatarUrl(userId),
+      builder: (context, snapshot) {
+        final avatarUrl = snapshot.data;
+        
+        if (avatarUrl == null || avatarUrl.isEmpty) {
+          // Show app logo as fallback for no avatar
+          return CircleAvatar(
+            radius: 16,
+            backgroundImage: const AssetImage('assets/img/reptiGramLogo.png'),
+          );
+        }
+
+        // Show network image with proper error handling
+        return CircleAvatar(
+          radius: 16,
+          backgroundImage: NetworkImage(avatarUrl),
+          onBackgroundImageError: (exception, stackTrace) {
+            // Handle image loading errors by showing app logo
+            print('Feed avatar image failed to load: $avatarUrl, error: $exception');
+            if (mounted) {
+              setState(() {
+                _avatarUrls[userId] = null;
+              });
+            }
+          },
+        );
+      },
+    );
   }
 
   Future<void> _postComment(String content) async {
@@ -1005,35 +1059,44 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
                                   color: Colors.grey[100],
                                   borderRadius: BorderRadius.circular(8),
                                 ),
-                                child: Column(
+                                child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Row(
-                                      children: [
-                                        Text(
-                                          usernameSnapshot.data ?? 'Loading...',
-                                          style: const TextStyle(
-                                            color: Colors.brown,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 14,
+                                    _buildUserAvatar(comment['userId'] as String),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Text(
+                                                usernameSnapshot.data ?? 'Loading...',
+                                                style: const TextStyle(
+                                                  color: Colors.brown,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                              const Spacer(),
+                                              Text(
+                                                _formatTimestamp(comment['timestamp'] as int),
+                                                style: TextStyle(
+                                                  color: Colors.brown[400],
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
                                           ),
-                                        ),
-                                        const Spacer(),
-                                        Text(
-                                          _formatTimestamp(comment['timestamp'] as int),
-                                          style: TextStyle(
-                                            color: Colors.brown[400],
-                                            fontSize: 12,
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            comment['content'] as String,
+                                            style: const TextStyle(
+                                              color: Colors.black87,
+                                              fontSize: 14,
+                                            ),
                                           ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      comment['content'] as String,
-                                      style: const TextStyle(
-                                        color: Colors.black87,
-                                        fontSize: 14,
+                                        ],
                                       ),
                                     ),
                                   ],

@@ -29,6 +29,7 @@ class _PostScreenState extends State<PostScreen> {
   final List<PostModel> _posts = [];
   bool _isLoading = false;
   final Map<String, String> _usernames = {};
+  final Map<String, String?> _avatarUrls = {}; // Cache for avatar URLs
 
   @override
   void initState() {
@@ -355,37 +356,46 @@ class _PostScreenState extends State<PostScreen> {
                         final comment = post.comments[index];
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 8.0),
-                          child: Column(
+                          child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              FutureBuilder<String?>(
-                                future: appState.fetchUsername(comment.userId),
-                                builder: (context, snapshot) {
-                                  return RichText(
-                                    text: TextSpan(
-                                      children: [
-                                        TextSpan(
-                                          text: '${snapshot.data ?? 'Loading...'}: ',
-                                          style: const TextStyle(
-                                            color: Colors.brown,
-                                            fontWeight: FontWeight.bold,
+                              _buildUserAvatar(comment.userId),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    FutureBuilder<String?>(
+                                      future: appState.fetchUsername(comment.userId),
+                                      builder: (context, snapshot) {
+                                        return RichText(
+                                          text: TextSpan(
+                                            children: [
+                                              TextSpan(
+                                                text: '${snapshot.data ?? 'Loading...'}: ',
+                                                style: const TextStyle(
+                                                  color: Colors.brown,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              TextSpan(
+                                                text: comment.content,
+                                                style: const TextStyle(color: Colors.brown),
+                                              ),
+                                            ],
                                           ),
-                                        ),
-                                        TextSpan(
-                                          text: comment.content,
-                                          style: const TextStyle(color: Colors.brown),
-                                        ),
-                                      ],
+                                        );
+                                      },
                                     ),
-                                  );
-                                },
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                _formatTimestamp(comment.timestamp),
-                                style: TextStyle(
-                                  color: Colors.brown[400],
-                                  fontSize: 12,
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      _formatTimestamp(comment.timestamp),
+                                      style: TextStyle(
+                                        color: Colors.brown[400],
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -567,6 +577,59 @@ class _PostScreenState extends State<PostScreen> {
     }
   }
 
+  Future<String?> _getAvatarUrl(String userId) async {
+    if (_avatarUrls.containsKey(userId)) {
+      return _avatarUrls[userId];
+    }
+    
+    try {
+      // Get photo URL from Firestore (includes both custom uploads and Google profile URLs)
+      final url = await FirestoreService.getUserPhotoUrl(userId);
+      
+      if (mounted) {
+        setState(() {
+          _avatarUrls[userId] = url;
+        });
+      }
+      return url;
+    } catch (e) {
+      print('Error fetching avatar for user $userId: $e');
+      return null;
+    }
+  }
+
+  Widget _buildUserAvatar(String userId) {
+    return FutureBuilder<String?>(
+      future: _getAvatarUrl(userId),
+      builder: (context, snapshot) {
+        final avatarUrl = snapshot.data;
+        
+        if (avatarUrl == null || avatarUrl.isEmpty) {
+          // Show app logo as fallback for no avatar
+          return CircleAvatar(
+            radius: 12,
+            backgroundImage: const AssetImage('assets/img/reptiGramLogo.png'),
+          );
+        }
+
+        // Show network image with proper error handling
+        return CircleAvatar(
+          radius: 12,
+          backgroundImage: NetworkImage(avatarUrl),
+          onBackgroundImageError: (exception, stackTrace) {
+            // Handle image loading errors by showing app logo
+            print('Post avatar image failed to load: $avatarUrl, error: $exception');
+            if (mounted) {
+              setState(() {
+                _avatarUrls[userId] = null;
+              });
+            }
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
@@ -678,11 +741,7 @@ class _PostScreenState extends State<PostScreen> {
                           children: [
                             Row(
                               children: [
-                                const Icon(
-                                  Icons.account_circle,
-                                  color: Colors.brown,
-                                  size: 24,
-                                ),
+                                _buildUserAvatar(post.userId),
                                 const SizedBox(width: 8),
                                 FutureBuilder<String?>(
                                   future: appState.fetchUsername(post.userId),
@@ -758,27 +817,36 @@ class _PostScreenState extends State<PostScreen> {
                                   color: Colors.brown.withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
-                                child: Column(
+                                child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    FutureBuilder<String?>(
-                                      future: appState.fetchUsername(post.comments.last.userId),
-                                      builder: (context, snapshot) {
-                                        return Text(
-                                          'Latest: ${snapshot.data ?? 'Loading...'}: ${post.comments.last.content}',
-                                          style: const TextStyle(
-                                            color: Colors.brown,
-                                            fontSize: 14,
+                                    _buildUserAvatar(post.comments.last.userId),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          FutureBuilder<String?>(
+                                            future: appState.fetchUsername(post.comments.last.userId),
+                                            builder: (context, snapshot) {
+                                              return Text(
+                                                'Latest: ${snapshot.data ?? 'Loading...'}: ${post.comments.last.content}',
+                                                style: const TextStyle(
+                                                  color: Colors.brown,
+                                                  fontSize: 14,
+                                                ),
+                                              );
+                                                                                        },
                                           ),
-                                        );
-                                      },
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      _formatTimestamp(post.comments.last.timestamp),
-                                      style: TextStyle(
-                                        color: Colors.brown[400],
-                                        fontSize: 12,
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            _formatTimestamp(post.comments.last.timestamp),
+                                            style: TextStyle(
+                                              color: Colors.brown[400],
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ],
