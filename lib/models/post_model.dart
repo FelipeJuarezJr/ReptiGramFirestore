@@ -5,6 +5,7 @@ class PostModel {
   final String userId;
   final String content;
   final DateTime timestamp;
+  final String? imageUrl; // Optional image URL for image posts
   bool isLiked;
   int likeCount;
   List<CommentModel> comments;
@@ -14,6 +15,7 @@ class PostModel {
     required this.userId,
     required this.content,
     required this.timestamp,
+    this.imageUrl,
     this.isLiked = false,
     this.likeCount = 0,
     List<CommentModel>? comments,

@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import '../styles/colors.dart';
 import '../common/header.dart';
 import '../common/title_header.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/post_model.dart';
 import '../models/comment_model.dart';
 import '../state/app_state.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
+import 'dart:io';
+import 'dart:typed_data';
 
 class PostScreen extends StatefulWidget {
   final bool shouldLoadPosts;
@@ -128,6 +133,7 @@ class _PostScreenState extends State<PostScreen> {
                 userId: commentData['userId'] ?? '',
                 content: commentData['content'] ?? '',
                 timestamp: timestamp,
+                imageUrl: commentData['imageUrl'],
               );
               
               commentsMap.putIfAbsent(postId, () => []);
@@ -298,144 +304,265 @@ class _PostScreenState extends State<PostScreen> {
   void _showCommentDialog(PostModel post) {
     final commentController = TextEditingController();
     final appState = Provider.of<AppState>(context, listen: false);
+    XFile? selectedImage;
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: AppColors.pillShape,
-        ),
-        title: const Text(
-          'Add Comment',
-          style: TextStyle(color: Colors.brown),
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: commentController,
-                  style: TextStyle(color: Colors.brown),
-                  decoration: InputDecoration(
-                    hintText: 'Write a comment...',
-                    hintStyle: TextStyle(color: Colors.grey[400]),
-                    border: OutlineInputBorder(
-                      borderRadius: AppColors.pillShape,
-                      borderSide: BorderSide(color: Colors.grey),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: AppColors.pillShape,
+          ),
+          title: const Text(
+            'Add Comment',
+            style: TextStyle(color: Colors.brown),
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: commentController,
+                    style: TextStyle(color: Colors.brown),
+                    decoration: InputDecoration(
+                      hintText: 'Write a comment...',
+                      hintStyle: TextStyle(color: Colors.grey[400]),
+                      border: OutlineInputBorder(
+                        borderRadius: AppColors.pillShape,
+                        borderSide: BorderSide(color: Colors.grey),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: AppColors.pillShape,
+                        borderSide: BorderSide(color: Colors.grey),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: AppColors.pillShape,
+                        borderSide: BorderSide(color: Colors.brown),
+                      ),
                     ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: AppColors.pillShape,
-                      borderSide: BorderSide(color: Colors.grey),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: AppColors.pillShape,
-                      borderSide: BorderSide(color: Colors.brown),
-                    ),
+                    maxLines: 3,
                   ),
-                  maxLines: 3,
-                ),
-                const SizedBox(height: 16),
-                if (post.comments.isNotEmpty) ...[
-                  const Text(
-                    'Comments:',
-                    style: TextStyle(
-                      color: Colors.brown,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  const SizedBox(height: 16),
+                  // Image upload section
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.image, color: Colors.brown),
+                        onPressed: () async {
+                          final ImagePicker picker = ImagePicker();
+                          final XFile? image = await picker.pickImage(
+                            source: ImageSource.gallery,
+                            imageQuality: 85,
+                            maxWidth: 1024,
+                            maxHeight: 1024,
+                          );
+                          if (image != null) {
+                            setDialogState(() {
+                              selectedImage = image;
+                            });
+                          }
+                        },
+                      ),
+                      const Text(
+                        'Add Image',
+                        style: TextStyle(color: Colors.brown),
+                      ),
+                      const Spacer(),
+                      if (selectedImage != null)
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.red),
+                          onPressed: () {
+                            setDialogState(() {
+                              selectedImage = null;
+                            });
+                          },
+                        ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 150),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: post.comments.length,
-                      itemBuilder: (context, index) {
-                        final comment = post.comments[index];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 8.0),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _buildUserAvatar(comment.userId),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    FutureBuilder<String?>(
-                                      future: appState.fetchUsername(comment.userId),
-                                      builder: (context, snapshot) {
-                                        return RichText(
-                                          text: TextSpan(
+                  // Show selected image preview
+                  if (selectedImage != null)
+                    Container(
+                      margin: const EdgeInsets.only(top: 8),
+                      height: 120,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: kIsWeb
+                            ? FutureBuilder<Uint8List>(
+                                future: selectedImage!.readAsBytes(),
+                                builder: (context, snapshot) {
+                                  if (snapshot.hasData) {
+                                    return Image.memory(
+                                      snapshot.data!,
+                                      fit: BoxFit.cover,
+                                    );
+                                  } else {
+                                    return const Center(
+                                      child: CircularProgressIndicator(),
+                                    );
+                                  }
+                                },
+                              )
+                            : Image.file(
+                                File(selectedImage!.path),
+                                fit: BoxFit.cover,
+                              ),
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+                  if (post.comments.isNotEmpty) ...[
+                    const Text(
+                      'Comments:',
+                      style: TextStyle(
+                        color: Colors.brown,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 150),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: post.comments.length,
+                        itemBuilder: (context, index) {
+                          final comment = post.comments[index];
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8.0),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildUserAvatar(comment.userId),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      FutureBuilder<String?>(
+                                        future: appState.fetchUsername(comment.userId),
+                                        builder: (context, snapshot) {
+                                          return Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
-                                              TextSpan(
-                                                text: '${snapshot.data ?? 'Loading...'}: ',
-                                                style: const TextStyle(
-                                                  color: Colors.brown,
-                                                  fontWeight: FontWeight.bold,
+                                              RichText(
+                                                text: TextSpan(
+                                                  children: [
+                                                    TextSpan(
+                                                      text: '${snapshot.data ?? 'Loading...'}: ',
+                                                      style: const TextStyle(
+                                                        color: Colors.brown,
+                                                        fontWeight: FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                    TextSpan(
+                                                      text: comment.content,
+                                                      style: const TextStyle(color: Colors.brown),
+                                                    ),
+                                                  ],
                                                 ),
                                               ),
-                                              TextSpan(
-                                                text: comment.content,
-                                                style: const TextStyle(color: Colors.brown),
-                                              ),
+                                              // Show image if comment has one
+                                              if (comment.imageUrl != null) ...[
+                                                const SizedBox(height: 8),
+                                                Container(
+                                                  height: 120,
+                                                  width: 120,
+                                                  decoration: BoxDecoration(
+                                                    border: Border.all(color: Colors.grey[300]!),
+                                                    borderRadius: BorderRadius.circular(8),
+                                                  ),
+                                                  child: ClipRRect(
+                                                    borderRadius: BorderRadius.circular(8),
+                                                    child: Image.network(
+                                                      comment.imageUrl!,
+                                                      fit: BoxFit.cover,
+                                                      errorBuilder: (context, error, stackTrace) {
+                                                        return Container(
+                                                          color: Colors.grey[200],
+                                                          child: const Icon(
+                                                            Icons.error,
+                                                            color: Colors.grey,
+                                                          ),
+                                                        );
+                                                      },
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
                                             ],
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      _formatTimestamp(comment.timestamp),
-                                      style: TextStyle(
-                                        color: Colors.brown[400],
-                                        fontSize: 12,
+                                          );
+                                        },
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        _formatTimestamp(comment.timestamp),
+                                        style: TextStyle(
+                                          color: Colors.brown[400],
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
+                              ],
+                            ),
+                          );
+                        },
+                      ),
                     ),
-                  ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.brown,
+              ),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (commentController.text.trim().isNotEmpty || selectedImage != null) {
+                  // Show loading indicator
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (BuildContext context) {
+                      return const Center(
+                        child: CircularProgressIndicator(),
+                      );
+                    },
+                  );
+                  
+                  await _addComment(post, commentController.text.trim(), imageFile: selectedImage);
+                  
+                  // Hide loading indicator and close dialog
+                  Navigator.pop(context); // Close loading indicator
+                  Navigator.pop(context); // Close comment dialog
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.brown,
+              ),
+              child: const Text('Comment'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.brown,
-            ),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (commentController.text.trim().isNotEmpty) {
-                _addComment(post, commentController.text.trim());
-                Navigator.pop(context);
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.brown,
-            ),
-            child: const Text('Comment'),
-          ),
-        ],
       ),
     );
   }
 
-  Future<void> _addComment(PostModel post, String content) async {
+  Future<void> _addComment(PostModel post, String content, {XFile? imageFile}) async {
     try {
       final userId = FirebaseAuth.instance.currentUser?.uid;
       if (userId == null) return;
@@ -443,12 +570,62 @@ class _PostScreenState extends State<PostScreen> {
       // Ensure we have the username for the commenter
       await _fetchUsername(userId);
 
+      String? imageUrl;
+      
+      // Upload image if provided
+      if (imageFile != null) {
+        try {
+          final String commentImageId = DateTime.now().millisecondsSinceEpoch.toString();
+          final Reference ref = FirebaseStorage.instance
+              .ref()
+              .child('comment_images')
+              .child(userId)
+              .child(commentImageId);
+          
+          if (kIsWeb) {
+            final bytes = await imageFile.readAsBytes();
+            await ref.putData(
+              bytes,
+              SettableMetadata(
+                contentType: 'image/jpeg',
+                customMetadata: {
+                  'userId': userId,
+                  'uploadedAt': DateTime.now().toString(),
+                },
+              ),
+            );
+          } else {
+            await ref.putFile(
+              File(imageFile.path),
+              SettableMetadata(
+                contentType: 'image/jpeg',
+                customMetadata: {
+                  'userId': userId,
+                  'uploadedAt': DateTime.now().toString(),
+                },
+              ),
+            );
+          }
+          
+          imageUrl = await ref.getDownloadURL();
+        } catch (e) {
+          print('Error uploading comment image: $e');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Failed to upload image: ${e.toString()}')),
+            );
+          }
+          return;
+        }
+      }
+
       // Firestore: Add comment
       final commentDoc = await FirestoreService.comments.add({
         'postId': post.id,
         'userId': userId,
         'content': content,
         'timestamp': FieldValue.serverTimestamp(),
+        'imageUrl': imageUrl,
       });
 
       // Optimistic update
@@ -457,20 +634,21 @@ class _PostScreenState extends State<PostScreen> {
         userId: userId,
         content: content,
         timestamp: DateTime.now(),
+        imageUrl: imageUrl,
       );
 
       if (mounted) {
-      setState(() {
-        post.comments.add(newComment);
-      });
+        setState(() {
+          post.comments.add(newComment);
+        });
       }
 
     } catch (e) {
       print('Error adding comment: $e');
       if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to add comment: ${e.toString()}')),
-      );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to add comment: ${e.toString()}')),
+        );
       }
     }
   }
@@ -566,10 +744,10 @@ class _PostScreenState extends State<PostScreen> {
           // If still not found, try displayName directly
           if (username == null) {
             username = data['displayName'] ?? 'Unknown User';
-        }
+          }
         
-        // If still not found, use Unknown User
-        _usernames[userId] = username ?? 'Unknown User';
+          // If still not found, use Unknown User
+          _usernames[userId] = username ?? 'Unknown User';
         }
       }
     } catch (e) {
@@ -829,14 +1007,47 @@ class _PostScreenState extends State<PostScreen> {
                                           FutureBuilder<String?>(
                                             future: appState.fetchUsername(post.comments.last.userId),
                                             builder: (context, snapshot) {
-                                              return Text(
-                                                'Latest: ${snapshot.data ?? 'Loading...'}: ${post.comments.last.content}',
-                                                style: const TextStyle(
-                                                  color: Colors.brown,
-                                                  fontSize: 14,
-                                                ),
+                                              return Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    'Latest: ${snapshot.data ?? 'Loading...'}: ${post.comments.last.content}',
+                                                    style: const TextStyle(
+                                                      color: Colors.brown,
+                                                      fontSize: 14,
+                                                    ),
+                                                  ),
+                                                  // Show image if latest comment has one
+                                                  if (post.comments.last.imageUrl != null) ...[
+                                                    const SizedBox(height: 8),
+                                                    Container(
+                                                      height: 80,
+                                                      width: 80,
+                                                      decoration: BoxDecoration(
+                                                        border: Border.all(color: Colors.grey[300]!),
+                                                        borderRadius: BorderRadius.circular(8),
+                                                      ),
+                                                      child: ClipRRect(
+                                                        borderRadius: BorderRadius.circular(8),
+                                                        child: Image.network(
+                                                          post.comments.last.imageUrl!,
+                                                          fit: BoxFit.cover,
+                                                          errorBuilder: (context, error, stackTrace) {
+                                                            return Container(
+                                                              color: Colors.grey[200],
+                                                              child: const Icon(
+                                                                Icons.error,
+                                                                color: Colors.grey,
+                                                              ),
+                                                            );
+                                                          },
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
                                               );
-                                                                                        },
+                                            },
                                           ),
                                           const SizedBox(height: 4),
                                           Text(

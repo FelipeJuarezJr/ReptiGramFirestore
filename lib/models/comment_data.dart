@@ -3,6 +3,7 @@ class CommentData {
   final String userId;
   final String content;
   final int timestamp;
+  final String? imageUrl; // Optional image URL for image comments
   String? username;  // Will be fetched separately
 
   CommentData({
@@ -10,6 +11,7 @@ class CommentData {
     required this.userId,
     required this.content,
     required this.timestamp,
+    this.imageUrl,
     this.username,
   });
 
@@ -19,6 +21,7 @@ class CommentData {
       userId: map['userId'] ?? '',
       content: map['content'] ?? '',
       timestamp: map['timestamp'] ?? 0,
+      imageUrl: map['imageUrl'],
     );
   }
 
@@ -27,6 +30,7 @@ class CommentData {
       'userId': userId,
       'content': content,
       'timestamp': timestamp,
+      'imageUrl': imageUrl,
     };
   }
 } 

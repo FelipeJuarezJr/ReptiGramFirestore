@@ -11,6 +11,7 @@ import '../common/title_header.dart';
 import '../models/photo_data.dart';
 import '../state/app_state.dart';
 import '../services/firestore_service.dart';
+import 'dart:typed_data';
 
 class FeedScreen extends StatefulWidget {
   final bool showLikedOnly;
@@ -28,6 +29,7 @@ class _FeedScreenState extends State<FeedScreen> {
   List<PhotoData> _photos = [];
   bool _isLoading = false;
   final ImagePicker _picker = ImagePicker();
+  XFile? _selectedCommentImage; // For comment image upload
 
   @override
   void initState() {
@@ -722,6 +724,7 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
   final TextEditingController _commentController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final Map<String, String?> _avatarUrls = {}; // Cache for avatar URLs
+  XFile? _selectedCommentImage; // For comment image upload
 
   @override
   void initState() {
@@ -808,20 +811,72 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
       return;
     }
 
-    if (content.trim().isEmpty) return;
+    if (content.trim().isEmpty && _selectedCommentImage == null) return;
 
     try {
       print('Adding comment to Firestore for photo: ${widget.photo.id}');
+      
+      String? imageUrl;
+      
+      // Upload image if provided
+      if (_selectedCommentImage != null) {
+        try {
+          final String commentImageId = DateTime.now().millisecondsSinceEpoch.toString();
+          final Reference ref = FirebaseStorage.instance
+              .ref()
+              .child('comment_images')
+              .child(currentUser.uid)
+              .child(commentImageId);
+          
+          if (kIsWeb) {
+            final bytes = await _selectedCommentImage!.readAsBytes();
+            await ref.putData(
+              bytes,
+              SettableMetadata(
+                contentType: 'image/jpeg',
+                customMetadata: {
+                  'userId': currentUser.uid,
+                  'uploadedAt': DateTime.now().toString(),
+                },
+              ),
+            );
+          } else {
+            await ref.putFile(
+              File(_selectedCommentImage!.path),
+              SettableMetadata(
+                contentType: 'image/jpeg',
+                customMetadata: {
+                  'userId': currentUser.uid,
+                  'uploadedAt': DateTime.now().toString(),
+                },
+              ),
+            );
+          }
+          
+          imageUrl = await ref.getDownloadURL();
+        } catch (e) {
+          print('Error uploading comment image: $e');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to upload image: ${e.toString()}')),
+          );
+          return;
+        }
+      }
+      
       // Firestore: Add comment
       final docRef = await FirestoreService.comments.add({
         'photoId': widget.photo.id,
         'userId': currentUser.uid,
         'content': content.trim(),
         'timestamp': FieldValue.serverTimestamp(),
+        'imageUrl': imageUrl,
       });
       print('Comment added successfully with ID: ${docRef.id}');
 
       _commentController.clear();
+      setState(() {
+        _selectedCommentImage = null;
+      });
       
       // Scroll to bottom to show the new comment - only if controller is attached
       if (_scrollController.hasClients) {
@@ -1037,6 +1092,7 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
                           'userId': data['userId'] as String? ?? 'unknown',
                           'content': data['content'] as String? ?? '',
                           'timestamp': timestamp,
+                          'imageUrl': data['imageUrl'] as String?,
                         };
                       }).toList()
                         ..sort((a, b) => (a['timestamp'] as int).compareTo(b['timestamp'] as int)); // Sort oldest first
@@ -1096,6 +1152,34 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
                                               fontSize: 14,
                                             ),
                                           ),
+                                          // Show image if comment has one
+                                          if (comment['imageUrl'] != null) ...[
+                                            const SizedBox(height: 8),
+                                            Container(
+                                              height: 120,
+                                              width: 120,
+                                              decoration: BoxDecoration(
+                                                border: Border.all(color: Colors.grey[300]!),
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: ClipRRect(
+                                                borderRadius: BorderRadius.circular(8),
+                                                child: Image.network(
+                                                  comment['imageUrl'] as String,
+                                                  fit: BoxFit.cover,
+                                                  errorBuilder: (context, error, stackTrace) {
+                                                    return Container(
+                                                      color: Colors.grey[200],
+                                                      child: const Icon(
+                                                        Icons.error,
+                                                        color: Colors.grey,
+                                                      ),
+                                                    );
+                                                  },
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ],
                                       ),
                                     ),
@@ -1112,24 +1196,110 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
                 // Comment input
                 Padding(
                   padding: const EdgeInsets.all(8.0),
-                  child: Row(
+                  child: Column(
                     children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _commentController,
-                          decoration: const InputDecoration(
-                            hintText: 'Add a comment...',
-                            border: OutlineInputBorder(),
+                      // Image preview
+                      if (_selectedCommentImage != null)
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          height: 120,
+                          width: 120,
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          maxLines: null,
-                          textInputAction: TextInputAction.send,
-                          onSubmitted: _postComment,
+                          child: Stack(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: kIsWeb
+                                    ? FutureBuilder<Uint8List>(
+                                        future: _selectedCommentImage!.readAsBytes(),
+                                        builder: (context, snapshot) {
+                                          if (snapshot.hasData) {
+                                            return Image.memory(
+                                              snapshot.data!,
+                                              fit: BoxFit.cover,
+                                              width: 120,
+                                              height: 120,
+                                            );
+                                          } else {
+                                            return const Center(
+                                              child: CircularProgressIndicator(),
+                                            );
+                                          }
+                                        },
+                                      )
+                                    : Image.file(
+                                        File(_selectedCommentImage!.path),
+                                        fit: BoxFit.cover,
+                                        width: 120,
+                                        height: 120,
+                                      ),
+                              ),
+                              Positioned(
+                                top: 4,
+                                right: 4,
+                                child: GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedCommentImage = null;
+                                    });
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: const BoxDecoration(
+                                      color: Colors.red,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.close,
+                                      color: Colors.white,
+                                      size: 16,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.send),
-                        onPressed: () => _postComment(_commentController.text),
-                        color: Theme.of(context).primaryColor,
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.image, color: Colors.brown),
+                            onPressed: () async {
+                              final ImagePicker picker = ImagePicker();
+                              final XFile? image = await picker.pickImage(
+                                source: ImageSource.gallery,
+                                imageQuality: 85,
+                                maxWidth: 1024,
+                                maxHeight: 1024,
+                              );
+                              if (image != null) {
+                                setState(() {
+                                  _selectedCommentImage = image;
+                                });
+                              }
+                            },
+                          ),
+                          Expanded(
+                            child: TextField(
+                              controller: _commentController,
+                              decoration: const InputDecoration(
+                                hintText: 'Add a comment...',
+                                border: OutlineInputBorder(),
+                              ),
+                              maxLines: null,
+                              textInputAction: TextInputAction.send,
+                              onSubmitted: (text) => _postComment(text),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.send),
+                            onPressed: () => _postComment(_commentController.text),
+                            color: Theme.of(context).primaryColor,
+                          ),
+                        ],
                       ),
                     ],
                   ),
