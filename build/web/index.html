@@ -9,9 +9,20 @@
   
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black" />
-  <meta name="apple-mobile-web-app-title" content="auth_app" />
+  <meta name="apple-mobile-web-app-title" content="ReptiGram" />
   <link rel="apple-touch-icon" href="icons/Icon-192.png" />
   <link rel="icon" type="image/png" href="favicon.png" />
+  
+  <!-- Splash screen icons for better display -->
+  <link rel="apple-touch-icon" sizes="96x96" href="icons/Icon-96.png" />
+  <link rel="apple-touch-icon" sizes="144x144" href="icons/Icon-144.png" />
+  <link rel="apple-touch-icon" sizes="192x192" href="icons/Icon-192.png" />
+  <link rel="apple-touch-icon" sizes="512x512" href="icons/Icon-512.png" />
+  
+  <!-- Android splash screen -->
+  <meta name="theme-color" content="#FF914D" />
+  <meta name="msapplication-TileColor" content="#FF914D" />
+  <meta name="msapplication-TileImage" content="icons/Icon-144.png" />
   <title>ReptiGram - A Social Network for Reptile Enthusiasts</title>
   <meta name="description" content="ReptiGram - A Social Network for Reptile Enthusiasts" />
 
@@ -47,7 +58,7 @@
 
   <script>
     // The value below is injected by flutter build, do not touch.
-    const serviceWorkerVersion = "2846571834";
+    const serviceWorkerVersion = "3594302026";
   </script>
   <!-- This script adds the flutter initialization JS code -->
   <script src="flutter.js" defer></script>
@@ -58,14 +69,288 @@
       margin: 0;
       padding: 0;
       overflow: hidden;
+      background: linear-gradient(135deg, #FFDE59 0%, #FF914D 100%);
     }
     #flutter_target {
       height: 100%;
     }
+    
+    /* Loading screen to prevent blurry icon display */
+    .loading-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #FFDE59 0%, #FF914D 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      transition: opacity 0.3s ease-out;
+    }
+    
+    .loading-screen.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    
+    .loading-logo {
+      width: 120px;
+      height: 120px;
+      border-radius: 20px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      object-fit: contain;
+      background: transparent;
+    }
+
+    /* PWA Install Banner Styles */
+    #pwa-install-banner {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(135deg, #FFDE59 0%, #FF914D 100%);
+      color: #333;
+      padding: 16px;
+      box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+      z-index: 9999;
+      transform: translateY(100%);
+      transition: transform 0.3s ease-in-out;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    #pwa-install-banner.show {
+      transform: translateY(0);
+    }
+
+    .install-content {
+      display: flex;
+      align-items: center;
+      flex: 1;
+    }
+
+    .install-icon {
+      width: 48px;
+      height: 48px;
+      margin-right: 12px;
+      border-radius: 8px;
+    }
+
+    .install-text {
+      flex: 1;
+    }
+
+    .install-title {
+      font-weight: 600;
+      font-size: 16px;
+      margin: 0 0 4px 0;
+    }
+
+    .install-subtitle {
+      font-size: 14px;
+      opacity: 0.8;
+      margin: 0;
+    }
+
+    .install-buttons {
+      display: flex;
+      gap: 8px;
+    }
+
+    .install-btn {
+      background: #333;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .install-btn:hover {
+      background: #555;
+    }
+
+    .dismiss-btn {
+      background: transparent;
+      color: #333;
+      border: 1px solid #333;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .dismiss-btn:hover {
+      background: rgba(0,0,0,0.1);
+    }
+
+    @media (max-width: 480px) {
+      #pwa-install-banner {
+        padding: 12px;
+      }
+      
+      .install-title {
+        font-size: 14px;
+      }
+      
+      .install-subtitle {
+        font-size: 12px;
+      }
+      
+      .install-btn, .dismiss-btn {
+        padding: 6px 12px;
+        font-size: 12px;
+      }
+    }
   </style>
 </head>
 <body>
+  <!-- Loading Screen -->
+  <div id="loading-screen" class="loading-screen">
+    <img src="icons/Icon-144.png" alt="ReptiGram" class="loading-logo">
+  </div>
+  
+  <!-- PWA Install Banner -->
+  <div id="pwa-install-banner">
+    <div class="install-content">
+      <img src="icons/Icon-192.png?v=2" alt="ReptiGram" class="install-icon">
+      <div class="install-text">
+        <div class="install-title">Install ReptiGram</div>
+        <div class="install-subtitle">Add to home screen for quick access</div>
+      </div>
+    </div>
+    <div class="install-buttons">
+      <button class="dismiss-btn" onclick="dismissInstallBanner()">Not now</button>
+      <button class="install-btn" onclick="installPWA()">Install</button>
+    </div>
+  </div>
+
   <script>
+    // PWA Install Prompt Logic
+    let deferredPrompt;
+    let installBannerShown = false;
+
+    // Check if user has already dismissed the banner
+    const hasUserDismissed = localStorage.getItem('pwa-install-dismissed');
+    const hasUserInstalled = localStorage.getItem('pwa-installed');
+
+    // Listen for the beforeinstallprompt event
+    window.addEventListener('beforeinstallprompt', (e) => {
+      console.log('🚀 PWA install prompt available');
+      
+      // Prevent the mini-infobar from appearing on mobile
+      e.preventDefault();
+      
+      // Stash the event so it can be triggered later
+      deferredPrompt = e;
+      
+      // Show our custom install banner if user hasn't dismissed it
+      if (!hasUserDismissed && !hasUserInstalled && !installBannerShown) {
+        // Wait a bit before showing the banner
+        setTimeout(() => {
+          showInstallBanner();
+        }, 3000);
+      }
+    });
+
+    // Listen for successful installation
+    window.addEventListener('appinstalled', (e) => {
+      console.log('✅ PWA was installed');
+      localStorage.setItem('pwa-installed', 'true');
+      hideInstallBanner();
+      deferredPrompt = null;
+    });
+
+    function showInstallBanner() {
+      if (deferredPrompt && !installBannerShown) {
+        const banner = document.getElementById('pwa-install-banner');
+        banner.classList.add('show');
+        installBannerShown = true;
+        console.log('📱 Showing PWA install banner');
+      }
+    }
+
+    function hideInstallBanner() {
+      const banner = document.getElementById('pwa-install-banner');
+      banner.classList.remove('show');
+      installBannerShown = false;
+    }
+
+    function dismissInstallBanner() {
+      localStorage.setItem('pwa-install-dismissed', 'true');
+      hideInstallBanner();
+      console.log('❌ User dismissed PWA install banner');
+    }
+
+    function installPWA() {
+      if (deferredPrompt) {
+        // Show the install prompt
+        deferredPrompt.prompt();
+        
+        // Wait for the user to respond to the prompt
+        deferredPrompt.userChoice.then((choiceResult) => {
+          if (choiceResult.outcome === 'accepted') {
+            console.log('✅ User accepted the install prompt');
+            localStorage.setItem('pwa-installed', 'true');
+          } else {
+            console.log('❌ User dismissed the install prompt');
+            localStorage.setItem('pwa-install-dismissed', 'true');
+          }
+          deferredPrompt = null;
+          hideInstallBanner();
+        });
+      } else {
+        console.log('⚠️ No install prompt available');
+        // Fallback: show instructions for manual installation
+        showManualInstallInstructions();
+      }
+    }
+
+    function showManualInstallInstructions() {
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const isAndroid = /Android/.test(navigator.userAgent);
+      
+      let message = '';
+      
+      if (isIOS) {
+        message = 'To install ReptiGram: Tap the share button (📤) and select "Add to Home Screen"';
+      } else if (isAndroid) {
+        message = 'To install ReptiGram: Tap the menu (⋮) and select "Add to Home Screen"';
+      } else {
+        message = 'To install ReptiGram: Look for the install icon in your browser\'s address bar';
+      }
+      
+      // You can show this message in a more elegant way
+      alert(message);
+    }
+
+    // Check if app is already installed (standalone mode)
+    if (window.matchMedia('(display-mode: standalone)').matches || 
+        window.navigator.standalone === true) {
+      console.log('✅ App is already installed and running in standalone mode');
+      localStorage.setItem('pwa-installed', 'true');
+    }
+
+    // Handle loading screen
+    function hideLoadingScreen() {
+      const loadingScreen = document.getElementById('loading-screen');
+      if (loadingScreen) {
+        loadingScreen.classList.add('hidden');
+        setTimeout(() => {
+          loadingScreen.style.display = 'none';
+        }, 300);
+      }
+    }
+
     window.addEventListener('load', function(ev) {
       // Download main.dart.js
       _flutter.loader.loadEntrypoint({
@@ -75,6 +360,9 @@
         onEntrypointLoaded: async function(engineInitializer) {
           const appRunner = await engineInitializer.initializeEngine();
           await appRunner.runApp();
+          
+          // Hide loading screen after app is loaded
+          setTimeout(hideLoadingScreen, 500);
         }
       });
     });

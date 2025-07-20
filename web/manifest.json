@@ -1,14 +1,24 @@
 {
     "name": "ReptiGram - A Social Network for Reptile Enthusiasts",
-    "short_name": "ReptiGram - A Social Network for Reptile Enthusiasts",
+    "short_name": "ReptiGram",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
+    "background_color": "#FFDE59",
+    "theme_color": "#FF914D",
     "description": "A Social Network for Reptile Enthusiasts",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
+        {
+            "src": "icons/Icon-96.png",
+            "sizes": "96x96",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-144.png",
+            "sizes": "144x144",
+            "type": "image/png"
+        },
         {
             "src": "icons/Icon-192.png",
             "sizes": "192x192",
