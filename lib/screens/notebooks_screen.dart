@@ -19,6 +19,7 @@ import '../services/firestore_service.dart';
 import '../constants/photo_sources.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:html' as html;
 
 class NotebooksScreen extends StatefulWidget {
   final String notebookName;
@@ -453,121 +454,171 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
       print('📸 First photo URL: ${photos[0].firebaseUrl}');
     }
     
-    return InkWell(
-      onTap: () async {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => PhotosOnlyScreen(
-              notebookName: notebookName,
-              parentBinderName: widget.parentBinderName!,
-              parentAlbumName: widget.parentAlbumName!,
-              source: PhotoSources.photosOnly,
+    return GestureDetector(
+      onSecondaryTapDown: (details) => _showNotebookContextMenu(context, details.globalPosition, notebookName),
+      onLongPress: () => _showNotebookContextMenu(context, Offset(200, 200), notebookName),
+      child: InkWell(
+        onTap: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => PhotosOnlyScreen(
+                notebookName: notebookName,
+                parentBinderName: widget.parentBinderName!,
+                parentAlbumName: widget.parentAlbumName!,
+                source: PhotoSources.photosOnly,
+              ),
             ),
+          );
+          
+          // Refresh data when returning from PhotosOnlyScreen
+          await _loadNotebooks();
+          await _loadNotebookPhotos();
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: AppColors.inputGradient,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 3,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
-        );
-        
-        // Refresh data when returning from PhotosOnlyScreen
-        await _loadNotebooks();
-        await _loadNotebookPhotos();
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: AppColors.inputGradient,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.2),
-              blurRadius: 3,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            if (photos.isNotEmpty)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    return Column(
-                      children: [
-                        if (photos.isNotEmpty)
-                          Expanded(
-                            flex: 2,
-                            child: Image.network(
-                              photos[0].firebaseUrl!,
-                              fit: BoxFit.cover,
-                              width: double.infinity,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Container(
-                                  color: Colors.grey[300],
-                                  child: const Icon(Icons.broken_image, color: Colors.grey),
-                                );
-                              },
+          child: Stack(
+            children: [
+              if (photos.isNotEmpty)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return Column(
+                        children: [
+                          if (photos.isNotEmpty)
+                            Expanded(
+                              flex: 2,
+                              child: Image.network(
+                                photos[0].firebaseUrl!,
+                                fit: BoxFit.cover,
+                                width: double.infinity,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    color: Colors.grey[300],
+                                    child: const Icon(Icons.broken_image, color: Colors.grey),
+                                  );
+                                },
+                              ),
                             ),
-                          ),
-                        if (photos.length > 1)
-                          Expanded(
-                            flex: 1,
-                            child: Row(
-                              children: [
-                                for (var i = 1; i < photos.length && i < 4; i++)
-                                  Expanded(
-                                    child: Image.network(
-                                      photos[i].firebaseUrl!,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) {
-                                        return Container(
-                                          color: Colors.grey[300],
-                                          child: const Icon(Icons.broken_image, color: Colors.grey),
-                                        );
-                                      },
+                          if (photos.length > 1)
+                            Expanded(
+                              flex: 1,
+                              child: Row(
+                                children: [
+                                  for (var i = 1; i < photos.length && i < 4; i++)
+                                    Expanded(
+                                      child: Image.network(
+                                        photos[i].firebaseUrl!,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) {
+                                          return Container(
+                                            color: Colors.grey[300],
+                                            child: const Icon(Icons.broken_image, color: Colors.grey),
+                                          );
+                                        },
+                                      ),
                                     ),
-                                  ),
-                                for (var i = photos.length; i < 4; i++)
-                                  Expanded(
-                                    child: Container(
-                                      color: Colors.grey[300],
+                                  for (var i = photos.length; i < 4; i++)
+                                    Expanded(
+                                      child: Container(
+                                        color: Colors.grey[300],
+                                      ),
                                     ),
-                                  ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [
+                        Colors.black.withOpacity(0.7),
+                        Colors.transparent,
                       ],
-                    );
-                  },
+                    ),
+                  ),
+                  padding: const EdgeInsets.all(8.0),
+                  child: Text(
+                    notebookName,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [
-                      Colors.black.withOpacity(0.7),
-                      Colors.transparent,
+              // Context menu button for accessibility
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert, color: Colors.white, size: 20),
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'edit':
+                          _editNotebookName(notebookName);
+                          break;
+                        case 'delete':
+                          _deleteNotebookWithContents(notebookName);
+                          break;
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Row(
+                          children: [
+                            Icon(Icons.edit, color: Colors.blue),
+                            SizedBox(width: 8),
+                            Text('Edit Folder Name'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete, color: Colors.red),
+                            SizedBox(width: 8),
+                            Text('Delete Folder'),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
-                padding: const EdgeInsets.all(8.0),
-                child: Text(
-                  notebookName,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                  overflow: TextOverflow.ellipsis,
-                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -618,120 +669,157 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
     print('🔗 Photo URL: ${photo.firebaseUrl}');
     print('🆔 Photo ID: ${photo.id}');
     
-    return InkWell(
-      onTap: () => _showEnlargedImage(photo),
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: AppColors.inputGradient,
-          borderRadius: BorderRadius.circular(15),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.2),
-              blurRadius: 5,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(15),
-              child: FutureBuilder<Uint8List?>(
-                future: _loadImageBytes(photo.firebaseUrl!),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return Container();
-                  }
-                  
-                  if (snapshot.hasError) {
-                    print('❌ Error loading image bytes: ${snapshot.error}');
-                    return _buildFallbackImage(photo.firebaseUrl!);
-                  }
-                  
-                  if (snapshot.hasData && snapshot.data != null) {
-                    return Image.memory(
-                      snapshot.data!,
+    return GestureDetector(
+      onSecondaryTapDown: (details) => _showPhotoContextMenu(context, details.globalPosition, photo),
+      onLongPress: () => _showPhotoContextMenu(context, Offset(200, 200), photo),
+      child: InkWell(
+        onTap: () => _showEnlargedImage(photo),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: AppColors.inputGradient,
+            borderRadius: BorderRadius.circular(15),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 5,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(15),
+                child: FutureBuilder<Uint8List?>(
+                  future: _loadImageBytes(photo.firebaseUrl!),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return Container();
+                    }
+                    
+                    if (snapshot.hasError) {
+                      print('❌ Error loading image bytes: ${snapshot.error}');
+                      return _buildFallbackImage(photo.firebaseUrl!);
+                    }
+                    
+                    if (snapshot.hasData && snapshot.data != null) {
+                      return Image.memory(
+                        snapshot.data!,
                 fit: BoxFit.cover,
                 width: double.infinity,
                 height: double.infinity,
-                      errorBuilder: (context, error, stackTrace) {
-                        print('❌ Memory image error: $error');
-                        return _buildFallbackImage(photo.firebaseUrl!);
-                      },
-                    );
-                  }
-                  
-                  return _buildFallbackImage(photo.firebaseUrl!);
-                },
-              ),
-            ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withOpacity(0.7),
-                      Colors.transparent,
-                    ],
-                  ),
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(15),
-                    topRight: Radius.circular(15),
-                  ),
-                ),
-                padding: const EdgeInsets.all(8.0),
-                child: Text(
-                  photo.title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
-            Positioned(
-              bottom: 8,
-              right: 8,
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.5),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: InkWell(
-                  onTap: () async {
-                    // Toggle like immediately using ValueNotifier
-                    final notifier = _likeNotifiers[photo.id];
-                    if (notifier != null) {
-                      notifier.value = !notifier.value;
-                      photo.isLiked = notifier.value;
+                        errorBuilder: (context, error, stackTrace) {
+                          print('❌ Memory image error: $error');
+                          return _buildFallbackImage(photo.firebaseUrl!);
+                        },
+                      );
                     }
                     
-                    // Save like to Firestore
-                    await _toggleLike(photo);
+                    return _buildFallbackImage(photo.firebaseUrl!);
                   },
-                  child: ValueListenableBuilder<bool>(
-                    valueListenable: _likeNotifiers[photo.id] ?? ValueNotifier<bool>(photo.isLiked),
-                    builder: (context, isLiked, child) {
-                      return Icon(
-                        isLiked ? Icons.favorite : Icons.favorite_border,
-                        color: isLiked ? Colors.red : Colors.white,
-                        size: 20,
-                      );
-                    },
+                ),
+              ),
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withOpacity(0.7),
+                        Colors.transparent,
+                      ],
+                    ),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(15),
+                      topRight: Radius.circular(15),
+                    ),
+                  ),
+                  padding: const EdgeInsets.all(8.0),
+                  child: Text(
+                    photo.title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ),
-            ),
-          ],
+              Positioned(
+                bottom: 8,
+                right: 8,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: InkWell(
+                    onTap: () async {
+                      // Toggle like immediately using ValueNotifier
+                      final notifier = _likeNotifiers[photo.id];
+                      if (notifier != null) {
+                        notifier.value = !notifier.value;
+                        photo.isLiked = notifier.value;
+                      }
+                      
+                      // Save like to Firestore
+                      await _toggleLike(photo);
+                    },
+                    child: ValueListenableBuilder<bool>(
+                      valueListenable: _likeNotifiers[photo.id] ?? ValueNotifier<bool>(photo.isLiked),
+                      builder: (context, isLiked, child) {
+                        return Icon(
+                          isLiked ? Icons.favorite : Icons.favorite_border,
+                          color: isLiked ? Colors.red : Colors.white,
+                          size: 20,
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              // Context menu button for accessibility
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert, color: Colors.white, size: 20),
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'delete':
+                          _deletePhoto(photo);
+                          break;
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete, color: Colors.red),
+                            SizedBox(width: 8),
+                            Text('Delete Photo'),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1236,6 +1324,408 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
         );
       }
       rethrow;
+    }
+  }
+
+  void _showNotebookContextMenu(BuildContext context, Offset position, String notebookName) {
+    showMenu(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromPoints(position, position),
+        Offset.zero & MediaQuery.of(context).size,
+      ),
+      items: [
+        PopupMenuItem(
+          child: const Row(
+            children: [
+              Icon(Icons.edit, color: Colors.blue),
+              SizedBox(width: 8),
+              Text('Edit Folder Name'),
+            ],
+          ),
+          onTap: () => _editNotebookName(notebookName),
+        ),
+        PopupMenuItem(
+          child: const Row(
+            children: [
+              Icon(Icons.delete, color: Colors.red),
+              SizedBox(width: 8),
+              Text('Delete Folder'),
+            ],
+          ),
+          onTap: () => _deleteNotebookWithContents(notebookName),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _editNotebookName(String currentName) async {
+    final TextEditingController controller = TextEditingController(text: currentName);
+    
+    final result = await showDialog<String>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppColors.dialogBackground,
+          title: const Text(
+            'Edit Folder Name',
+            style: TextStyle(color: AppColors.titleText),
+          ),
+          content: TextField(
+            controller: controller,
+            style: const TextStyle(color: AppColors.titleText),
+            decoration: const InputDecoration(
+              hintText: 'Enter new folder name',
+              hintStyle: TextStyle(color: Colors.grey),
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: Colors.grey),
+              ),
+              focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: Colors.brown),
+              ),
+            ),
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () => Navigator.of(context).pop(),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.brown,
+              ),
+            ),
+            TextButton(
+              child: const Text('Save'),
+              onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.brown,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result != null && result.isNotEmpty && result != currentName) {
+      try {
+        final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
+        if (currentUser == null) return;
+
+        // Find the notebook document
+        final notebooksQuery = await FirestoreService.notebooks
+            .where('userId', isEqualTo: currentUser.uid)
+            .where('albumName', isEqualTo: widget.parentAlbumName)
+            .where('binderName', isEqualTo: widget.parentBinderName)
+            .where('name', isEqualTo: currentName)
+            .get();
+
+        if (notebooksQuery.docs.isNotEmpty) {
+          final notebookDoc = notebooksQuery.docs.first;
+          
+          // Update notebook name
+          await FirestoreService.updateNotebook(notebookDoc.id, {'name': result});
+          
+          // Update all photos in this notebook
+          final photosQuery = await FirestoreService.photos
+              .where('userId', isEqualTo: currentUser.uid)
+              .where('albumName', isEqualTo: widget.parentAlbumName)
+              .where('binderName', isEqualTo: widget.parentBinderName)
+              .where('notebookName', isEqualTo: currentName)
+              .get();
+
+          final batch = FirebaseFirestore.instance.batch();
+          for (var doc in photosQuery.docs) {
+            batch.update(doc.reference, {'notebookName': result});
+          }
+          await batch.commit();
+
+          // Update local state
+          setState(() {
+            final index = notebooks.indexOf(currentName);
+            if (index != -1) {
+              notebooks[index] = result;
+              notebookPhotos[result] = notebookPhotos.remove(currentName) ?? [];
+            }
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Folder renamed to "$result"')),
+          );
+        }
+      } catch (e) {
+        print('Error renaming notebook: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to rename folder: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteNotebookWithContents(String notebookName) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppColors.dialogBackground,
+          title: const Text(
+            'Delete Folder',
+            style: TextStyle(color: AppColors.titleText),
+          ),
+          content: Text(
+            'Are you sure you want to delete "$notebookName" and all its contents? This action cannot be undone.',
+            style: const TextStyle(color: AppColors.titleText),
+          ),
+          actions: [
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () => Navigator.of(context).pop(false),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.brown,
+              ),
+            ),
+            TextButton(
+              child: const Text('Delete', style: TextStyle(color: Colors.red)),
+              onPressed: () => Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.red,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      try {
+        final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
+        if (currentUser == null) return;
+
+        // Show loading indicator
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          },
+        );
+
+        // Find the notebook document
+        final notebooksQuery = await FirestoreService.notebooks
+            .where('userId', isEqualTo: currentUser.uid)
+            .where('albumName', isEqualTo: widget.parentAlbumName)
+            .where('binderName', isEqualTo: widget.parentBinderName)
+            .where('name', isEqualTo: notebookName)
+            .get();
+
+        if (notebooksQuery.docs.isNotEmpty) {
+          final notebookDoc = notebooksQuery.docs.first;
+          
+          // Get all photos in this notebook
+          final photosQuery = await FirestoreService.photos
+              .where('userId', isEqualTo: currentUser.uid)
+              .where('albumName', isEqualTo: widget.parentAlbumName)
+              .where('binderName', isEqualTo: widget.parentBinderName)
+              .where('notebookName', isEqualTo: notebookName)
+              .get();
+
+          // Delete photos from storage and Firestore
+          final batch = FirebaseFirestore.instance.batch();
+          final storage = FirebaseStorage.instance;
+          
+          for (var doc in photosQuery.docs) {
+            final data = doc.data() as Map<String, dynamic>;
+            final photoUrl = data['url'] as String?;
+            
+            // Delete from storage if URL exists
+            if (photoUrl != null) {
+              try {
+                final ref = storage.refFromURL(photoUrl);
+                await ref.delete();
+              } catch (e) {
+                print('Error deleting photo from storage: $e');
+              }
+            }
+            
+            // Delete likes for this photo
+            final likesQuery = await FirestoreService.likes
+                .where('photoId', isEqualTo: doc.id)
+                .get();
+            for (var likeDoc in likesQuery.docs) {
+              batch.delete(likeDoc.reference);
+            }
+            
+            // Delete comments for this photo
+            final commentsQuery = await FirestoreService.comments
+                .where('photoId', isEqualTo: doc.id)
+                .get();
+            for (var commentDoc in commentsQuery.docs) {
+              batch.delete(commentDoc.reference);
+            }
+            
+            // Delete the photo document
+            batch.delete(doc.reference);
+          }
+
+          // Delete the notebook document
+          batch.delete(notebookDoc.reference);
+          
+          // Commit all deletions
+          await batch.commit();
+
+          // Update local state
+          setState(() {
+            notebooks.remove(notebookName);
+            notebookPhotos.remove(notebookName);
+          });
+
+          Navigator.pop(context); // Hide loading indicator
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Folder "$notebookName" and all contents deleted')),
+          );
+        }
+      } catch (e) {
+        Navigator.pop(context); // Hide loading indicator
+        print('Error deleting notebook: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete folder: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
+  void _showPhotoContextMenu(BuildContext context, Offset position, PhotoData photo) {
+    showMenu(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromPoints(position, position),
+        Offset.zero & MediaQuery.of(context).size,
+      ),
+      items: [
+        PopupMenuItem(
+          child: const Row(
+            children: [
+              Icon(Icons.delete, color: Colors.red),
+              SizedBox(width: 8),
+              Text('Delete Photo'),
+            ],
+          ),
+          onTap: () => _deletePhoto(photo),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _deletePhoto(PhotoData photo) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppColors.dialogBackground,
+          title: const Text(
+            'Delete Photo',
+            style: TextStyle(color: AppColors.titleText),
+          ),
+          content: Text(
+            'Are you sure you want to delete this photo? This action cannot be undone.',
+            style: const TextStyle(color: AppColors.titleText),
+          ),
+          actions: [
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () => Navigator.of(context).pop(false),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.brown,
+              ),
+            ),
+            TextButton(
+              child: const Text('Delete', style: TextStyle(color: Colors.red)),
+              onPressed: () => Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.red,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      try {
+        final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
+        if (currentUser == null) return;
+
+        // Show loading indicator
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          },
+        );
+
+        // Delete from storage
+        if (photo.firebaseUrl != null) {
+          try {
+            final storage = FirebaseStorage.instance;
+            final ref = storage.refFromURL(photo.firebaseUrl!);
+            await ref.delete();
+          } catch (e) {
+            print('Error deleting photo from storage: $e');
+          }
+        }
+
+        // Delete likes for this photo
+        final likesQuery = await FirestoreService.likes
+            .where('photoId', isEqualTo: photo.id)
+            .get();
+
+        // Delete comments for this photo
+        final commentsQuery = await FirestoreService.comments
+            .where('photoId', isEqualTo: photo.id)
+            .get();
+
+        // Delete photo document and related data
+        final batch = FirebaseFirestore.instance.batch();
+        
+        for (var likeDoc in likesQuery.docs) {
+          batch.delete(likeDoc.reference);
+        }
+        
+        for (var commentDoc in commentsQuery.docs) {
+          batch.delete(commentDoc.reference);
+        }
+        
+        batch.delete(FirestoreService.photos.doc(photo.id));
+        
+        await batch.commit();
+
+        // Update local state
+        setState(() {
+          // Remove photo from all notebook collections
+          for (var notebookName in notebookPhotos.keys) {
+            notebookPhotos[notebookName]?.removeWhere((p) => p.id == photo.id);
+          }
+          // Remove the like notifier
+          _likeNotifiers.remove(photo.id);
+        });
+
+        Navigator.pop(context); // Hide loading indicator
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Photo deleted successfully')),
+        );
+      } catch (e) {
+        Navigator.pop(context); // Hide loading indicator
+        print('Error deleting photo: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete photo: ${e.toString()}')),
+        );
+      }
     }
   }
 } 

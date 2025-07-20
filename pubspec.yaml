@@ -37,10 +37,6 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   
-  # Remove the non-existent asset directories
+  # Assets configuration
   assets:
-    - assets/img/reptiGramLogo.png
-    - assets/img/google_logo.png
-
-  #   - assets/images/
-  #   - assets/icons/
+    - assets/img/
