@@ -8,6 +8,7 @@ ReptiGram is a dedicated social media platform for reptile enthusiasts, combinin
 ✅ Reptile Marketplace: A built-in e-commerce section for buying and selling reptiles, supplies, and accessories.
 ✅ Fundraising Community: A feature to support reptile rescues and conservation efforts.
 ✅ Engaging Features: Interactive content, discussions, and potential gamification to enhance user participation.
+✅ Real-time Messaging: Chat with other users with search functionality and autocomplete.
 
 ReptiGram is more than just a social network—it’s a thriving hub for reptile lovers to connect, learn, and trade. 🦎🔥
 
