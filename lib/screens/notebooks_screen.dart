@@ -20,6 +20,7 @@ import '../constants/photo_sources.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:html' as html;
+import '../utils/responsive_utils.dart';
 
 class NotebooksScreen extends StatefulWidget {
   final String notebookName;
@@ -182,181 +183,418 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
           gradient: AppColors.mainGradient,
         ),
         child: SafeArea(
-          child: Column(
-            children: [
-              const TitleHeader(),
-              const Header(initialIndex: 1),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    children: [
-                      // Back button row
-                      Align(
-                        alignment: Alignment.topLeft,
-                        child: Padding(
-                          padding: const EdgeInsets.only(left: 8.0),
-                          child: IconButton(
-                            icon: const Icon(
-                              Icons.arrow_back,
-                              color: AppColors.titleText,
-                            ),
-                            onPressed: () {
-                              Navigator.pushReplacement(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => BindersScreen(
-                                    binderName: widget.notebookName,
-                                    parentAlbumName: widget.parentAlbumName,
-                                    source: PhotoSources.binders,
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 20.0),
-                      // Action Buttons at the top
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _buildActionButton(
-                            'Create Notebook',
-                            Icons.create_new_folder,
-                            () {
-                              _createNewNotebook();
-                            },
-                          ),
-                          _buildActionButton(
-                            'Add Image',
-                            Icons.add_photo_alternate,
-                            () async {
-                              final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
-                              if (currentUser == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Please log in to upload photos')),
-                                );
-                                return;
-                              }
-
-                              try {
-                                final XFile? pickedFile = await _picker.pickImage(
-                                  source: ImageSource.gallery,
-                                  imageQuality: 85,
-                                );
-
-                                if (pickedFile == null) return;
-
-                                showDialog(
-                                  context: context,
-                                  barrierDismissible: false,
-                                  builder: (BuildContext context) {
-                                    return const Center(
-                                      child: CircularProgressIndicator(),
-                                    );
-                                  },
-                                );
-
-                                final String photoId = DateTime.now().millisecondsSinceEpoch.toString();
-                                print('🔄 Starting upload for photo ID: $photoId');
-                                print('👤 User ID: ${currentUser.uid}');
-                                print('📁 Source: ${widget.source}');
-                                
-                                final storageRef = FirebaseStorage.instance
-                                    .ref()
-                                    .child('photos')
-                                    .child(currentUser.uid)
-                                    .child(photoId);
-                                
-                                print('📂 Storage path: photos/${currentUser.uid}/$photoId');
-
-                                if (kIsWeb) {
-                                  final bytes = await pickedFile.readAsBytes();
-                                  print('📤 Uploading ${bytes.length} bytes to Storage...');
-                                  await storageRef.putData(
-                                    bytes,
-                                    SettableMetadata(contentType: 'image/jpeg'),
-                                  );
-                                } else {
-                                  print('📤 Uploading file to Storage...');
-                                  await storageRef.putFile(
-                                    File(pickedFile.path),
-                                    SettableMetadata(contentType: 'image/jpeg'),
-                                  );
-                                }
-
-                                final downloadUrl = await storageRef.getDownloadURL();
-                                print('✅ Storage upload complete. URL: $downloadUrl');
-
-                                // Firestore: Save photo with hierarchy info
-                                await FirestoreService.photos.doc(photoId).set({
-                                  'url': downloadUrl,
-                                  'timestamp': FieldValue.serverTimestamp(),
-                                  'albumName': widget.parentAlbumName,
-                                  'binderName': widget.parentBinderName, // Assign to current binder for preview
-                                  'notebookName': 'Unsorted',  // Photos go to main grid
-                                  'userId': currentUser.uid,
-                                  'source': PhotoSources.albums,  // Photos from notebooks screen
-                                });
-
-                                Navigator.pop(context); // Hide loading indicator
-                                await _loadNotebookPhotos(); // Reload photos
-
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Photo uploaded successfully!')),
-                                );
-                              } catch (e) {
-                                print('Error uploading photo: $e');
-                                Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Failed to upload photo: ${e.toString()}')),
-                                );
-                              }
-                            },
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 74),
-                      // Notebooks Grid below
-                      Expanded(
-                        child: _isLoading && notebookPhotos.isEmpty
-                          ? const Center(child: CircularProgressIndicator())
-                          : GridView.builder(
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 3,  // 3 items per row
-                                crossAxisSpacing: 8,
-                                mainAxisSpacing: 8,
-                                childAspectRatio: 0.75,  // Make items slightly taller than wide
-                              ),
-                              itemCount: notebooks.length + (notebookPhotos['Main Grid']?.length ?? 0),  // Show both notebooks and photos
-                              itemBuilder: (context, index) {
-                                // First show notebooks
-                                if (index < notebooks.length) {
-                                  return _buildNotebookCard(notebooks[index]);
-                                } 
-                                // Then show photos from main grid
-                                else {
-                                  final photoIndex = index - notebooks.length;
-                                  if (notebookPhotos['Main Grid'] != null && 
-                                      photoIndex < notebookPhotos['Main Grid']!.length) {
-                                    final photo = notebookPhotos['Main Grid']![photoIndex];
-                                    return _buildPhotoCard(photo);
-                                  }
-                                  return const SizedBox();
-                                }
-                              },
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
+          child: ResponsiveUtils.isWideScreen(context) 
+              ? _buildDesktopLayout(context)
+              : _buildMobileLayout(context),
         ),
       ),
     );
+  }
+
+  Widget _buildDesktopLayout(BuildContext context) {
+    return Column(
+      children: [
+        const TitleHeader(),
+        const Header(initialIndex: 1),
+        Expanded(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 1400),
+            margin: const EdgeInsets.symmetric(horizontal: 24.0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Left side - Back button and action buttons
+                Expanded(
+                  flex: 1,
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 24.0, right: 16.0),
+                    child: Card(
+                      elevation: 8,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFFFFF8E1), // Light cream
+                              Color(0xFFFFE0B2), // Light orange
+                              Color(0xFFFFCC80), // Medium orange
+                            ],
+                            stops: [0.0, 0.5, 1.0],
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(24.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.arrow_back,
+                                      color: AppColors.titleText,
+                                    ),
+                                    onPressed: () {
+                                      Navigator.pushReplacement(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => BindersScreen(
+                                            binderName: widget.notebookName,
+                                            parentAlbumName: widget.parentAlbumName,
+                                            source: PhotoSources.binders,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  const Text(
+                                    'Notebooks',
+                                    style: TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.titleText,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 20),
+                              _buildActionButtons(context),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Right side - Notebooks grid
+                Expanded(
+                  flex: 2,
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 24.0),
+                    child: _buildNotebooksGrid(context),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMobileLayout(BuildContext context) {
+    return Column(
+      children: [
+        const TitleHeader(),
+        const Header(initialIndex: 1),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                // Back button row
+                Align(
+                  alignment: Alignment.topLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 8.0),
+                    child: IconButton(
+                      icon: const Icon(
+                        Icons.arrow_back,
+                        color: AppColors.titleText,
+                      ),
+                      onPressed: () {
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => BindersScreen(
+                              binderName: widget.notebookName,
+                              parentAlbumName: widget.parentAlbumName,
+                              source: PhotoSources.binders,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20.0),
+                // Action Buttons at the top
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildActionButton(
+                      'Create Notebook',
+                      Icons.create_new_folder,
+                      () {
+                        _createNewNotebook();
+                      },
+                    ),
+                    _buildActionButton(
+                      'Add Image',
+                      Icons.add_photo_alternate,
+                      () async {
+                        final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
+                        if (currentUser == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Please log in to upload photos')),
+                          );
+                          return;
+                        }
+
+                        try {
+                          final XFile? pickedFile = await _picker.pickImage(
+                            source: ImageSource.gallery,
+                            imageQuality: 85,
+                          );
+
+                          if (pickedFile == null) return;
+
+                          showDialog(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (BuildContext context) {
+                              return const Center(
+                                child: CircularProgressIndicator(),
+                              );
+                            },
+                          );
+
+                          final String photoId = DateTime.now().millisecondsSinceEpoch.toString();
+                          print('🔄 Starting upload for photo ID: $photoId');
+                          print('👤 User ID: ${currentUser.uid}');
+                          print('📁 Source: ${widget.source}');
+                          
+                          final storageRef = FirebaseStorage.instance
+                              .ref()
+                              .child('photos')
+                              .child(currentUser.uid)
+                              .child(photoId);
+                          
+                          print('📂 Storage path: photos/${currentUser.uid}/$photoId');
+
+                          if (kIsWeb) {
+                            final bytes = await pickedFile.readAsBytes();
+                            print('📤 Uploading ${bytes.length} bytes to Storage...');
+                            await storageRef.putData(
+                              bytes,
+                              SettableMetadata(contentType: 'image/jpeg'),
+                            );
+                          } else {
+                            print('📤 Uploading file to Storage...');
+                            await storageRef.putFile(
+                              File(pickedFile.path),
+                              SettableMetadata(contentType: 'image/jpeg'),
+                            );
+                          }
+
+                          final downloadUrl = await storageRef.getDownloadURL();
+                          print('✅ Storage upload complete. URL: $downloadUrl');
+
+                          // Firestore: Save photo with hierarchy info
+                          await FirestoreService.photos.doc(photoId).set({
+                            'url': downloadUrl,
+                            'timestamp': FieldValue.serverTimestamp(),
+                            'albumName': widget.parentAlbumName,
+                            'binderName': widget.parentBinderName, // Assign to current binder for preview
+                            'notebookName': 'Unsorted',  // Photos go to main grid
+                            'userId': currentUser.uid,
+                            'source': PhotoSources.albums,  // Photos from notebooks screen
+                          });
+
+                          Navigator.pop(context); // Hide loading indicator
+                          await _loadNotebookPhotos(); // Reload photos
+
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Photo uploaded successfully!')),
+                          );
+                        } catch (e) {
+                          print('Error uploading photo: $e');
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed to upload photo: ${e.toString()}')),
+                          );
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 74),
+                // Notebooks Grid
+                Expanded(
+                  child: _buildNotebooksGrid(context),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActionButtons(BuildContext context) {
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () {
+              _createNewNotebook();
+            },
+            icon: const Icon(Icons.create_new_folder),
+            label: const Text('Create Notebook'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.titleText,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () async {
+              final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
+              if (currentUser == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please log in to upload photos')),
+                );
+                return;
+              }
+
+              try {
+                final XFile? pickedFile = await _picker.pickImage(
+                  source: ImageSource.gallery,
+                  imageQuality: 85,
+                );
+
+                if (pickedFile == null) return;
+
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (BuildContext context) {
+                    return const Center(
+                      child: CircularProgressIndicator(),
+                    );
+                  },
+                );
+
+                final String photoId = DateTime.now().millisecondsSinceEpoch.toString();
+                print('🔄 Starting upload for photo ID: $photoId');
+                print('👤 User ID: ${currentUser.uid}');
+                print('📁 Source: ${widget.source}');
+                
+                final storageRef = FirebaseStorage.instance
+                    .ref()
+                    .child('photos')
+                    .child(currentUser.uid)
+                    .child(photoId);
+                
+                print('📂 Storage path: photos/${currentUser.uid}/$photoId');
+
+                if (kIsWeb) {
+                  final bytes = await pickedFile.readAsBytes();
+                  print('📤 Uploading ${bytes.length} bytes to Storage...');
+                  await storageRef.putData(
+                    bytes,
+                    SettableMetadata(contentType: 'image/jpeg'),
+                  );
+                } else {
+                  print('📤 Uploading file to Storage...');
+                  await storageRef.putFile(
+                    File(pickedFile.path),
+                    SettableMetadata(contentType: 'image/jpeg'),
+                  );
+                }
+
+                final downloadUrl = await storageRef.getDownloadURL();
+                print('✅ Storage upload complete. URL: $downloadUrl');
+
+                // Firestore: Save photo with hierarchy info
+                await FirestoreService.photos.doc(photoId).set({
+                  'url': downloadUrl,
+                  'timestamp': FieldValue.serverTimestamp(),
+                  'albumName': widget.parentAlbumName,
+                  'binderName': widget.parentBinderName, // Assign to current binder for preview
+                  'notebookName': 'Unsorted',  // Photos go to main grid
+                  'userId': currentUser.uid,
+                  'source': PhotoSources.albums,  // Photos from notebooks screen
+                });
+
+                Navigator.pop(context); // Hide loading indicator
+                await _loadNotebookPhotos(); // Reload photos
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Photo uploaded successfully!')),
+                );
+              } catch (e) {
+                print('Error uploading photo: $e');
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Failed to upload photo: ${e.toString()}')),
+                );
+              }
+            },
+            icon: const Icon(Icons.add_photo_alternate),
+            label: const Text('Add Image'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.titleText,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNotebooksGrid(BuildContext context) {
+    return _isLoading && notebookPhotos.isEmpty
+        ? const Center(child: CircularProgressIndicator())
+        : GridView.builder(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: ResponsiveUtils.isWideScreen(context) ? 4 : 3,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              childAspectRatio: 0.75,
+            ),
+            itemCount: notebooks.length + (notebookPhotos['Main Grid']?.length ?? 0),
+            itemBuilder: (context, index) {
+              // First show notebooks
+              if (index < notebooks.length) {
+                return _buildNotebookCard(notebooks[index]);
+              } 
+              // Then show photos from main grid
+              else {
+                final photoIndex = index - notebooks.length;
+                if (notebookPhotos['Main Grid'] != null && 
+                    photoIndex < notebookPhotos['Main Grid']!.length) {
+                  final photo = notebookPhotos['Main Grid']![photoIndex];
+                  return _buildPhotoCard(photo);
+                }
+                return const SizedBox();
+              }
+            },
+          );
   }
 
 

@@ -15,6 +15,7 @@ import '../utils/photo_utils.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
 import '../constants/photo_sources.dart';
+import '../utils/responsive_utils.dart';
 
 class PhotosOnlyScreen extends StatefulWidget {
   final String notebookName;
@@ -249,92 +250,227 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
               gradient: AppColors.mainGradient,
             ),
             child: SafeArea(
-              child: Column(
-                children: [
-                  const TitleHeader(),
-                  const Header(initialIndex: 1),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        children: [
-                          // Back button row
-                          Align(
-                            alignment: Alignment.topLeft,
-                            child: Padding(
-                              padding: const EdgeInsets.only(left: 8.0),
-                              child: IconButton(
-                                icon: const Icon(
-                                  Icons.arrow_back,
-                                  color: AppColors.titleText,
-                                ),
-                                onPressed: () {
-                                  Navigator.pop(context);
-                                },
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          // Action Buttons with new layout
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,  // Align to right
-                            children: [
-                              _buildSmallActionButton(
-                                'Add Image',
-                                Icons.add_photo_alternate,
-                                _pickImage,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          Text(
-                            widget.notebookName,
-                            style: const TextStyle(
-                              color: AppColors.titleText,
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          // Photos Grid
-                          Expanded(
-                            child: appState.isLoading && appState.photos.isEmpty
-                                ? const Center(child: CircularProgressIndicator())
-                                : appState.photos.isEmpty
-                                    ? const Center(
-                                        child: Text(
-                                          'No photos yet.\nTap "Add Image" to get started!',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            color: AppColors.titleText,
-                                            fontSize: 16,
-                                          ),
-                                        ),
-                                      )
-                                    : GridView.builder(
-                                        gridDelegate:
-                                            const SliverGridDelegateWithFixedCrossAxisCount(
-                                          crossAxisCount: 2,
-                                          crossAxisSpacing: 16,
-                                          mainAxisSpacing: 16,
-                                        ),
-                                        itemCount: appState.photos.length,
-                                        itemBuilder: (context, index) {
-                                          return _buildPhotoCard(appState.photos[index]);
-                                        },
-                                      ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+              child: ResponsiveUtils.isWideScreen(context) 
+                  ? _buildDesktopLayout(context, appState)
+                  : _buildMobileLayout(context, appState),
             ),
           ),
         );
       }
     );
+  }
+
+  Widget _buildDesktopLayout(BuildContext context, AppState appState) {
+    return Column(
+      children: [
+        const TitleHeader(),
+        const Header(initialIndex: 1),
+        Expanded(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 1400),
+            margin: const EdgeInsets.symmetric(horizontal: 24.0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Left side - Back button and action buttons
+                Expanded(
+                  flex: 1,
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 24.0, right: 16.0),
+                    child: Card(
+                      elevation: 8,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFFFFF8E1), // Light cream
+                              Color(0xFFFFE0B2), // Light orange
+                              Color(0xFFFFCC80), // Medium orange
+                            ],
+                            stops: [0.0, 0.5, 1.0],
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(24.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.arrow_back,
+                                      color: AppColors.titleText,
+                                    ),
+                                    onPressed: () {
+                                      Navigator.pop(context);
+                                    },
+                                  ),
+                                  const Text(
+                                    'Photos',
+                                    style: TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.titleText,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 20),
+                              Text(
+                                widget.notebookName,
+                                style: const TextStyle(
+                                  color: AppColors.titleText,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              _buildActionButtons(context),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Right side - Photos grid
+                Expanded(
+                  flex: 2,
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 24.0),
+                    child: _buildPhotosGrid(context, appState),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMobileLayout(BuildContext context, AppState appState) {
+    return Column(
+      children: [
+        const TitleHeader(),
+        const Header(initialIndex: 1),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                // Back button row
+                Align(
+                  alignment: Alignment.topLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 8.0),
+                    child: IconButton(
+                      icon: const Icon(
+                        Icons.arrow_back,
+                        color: AppColors.titleText,
+                      ),
+                      onPressed: () {
+                        Navigator.pop(context);
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Action Buttons with new layout
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,  // Align to right
+                  children: [
+                    _buildSmallActionButton(
+                      'Add Image',
+                      Icons.add_photo_alternate,
+                      _pickImage,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  widget.notebookName,
+                  style: const TextStyle(
+                    color: AppColors.titleText,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Photos Grid
+                Expanded(
+                  child: _buildPhotosGrid(context, appState),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActionButtons(BuildContext context) {
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _pickImage,
+            icon: const Icon(Icons.add_photo_alternate),
+            label: const Text('Add Image'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.titleText,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPhotosGrid(BuildContext context, AppState appState) {
+    return appState.isLoading && appState.photos.isEmpty
+        ? const Center(child: CircularProgressIndicator())
+        : appState.photos.isEmpty
+            ? const Center(
+                child: Text(
+                  'No photos yet.\nTap "Add Image" to get started!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppColors.titleText,
+                    fontSize: 16,
+                  ),
+                ),
+              )
+            : GridView.builder(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: ResponsiveUtils.isWideScreen(context) ? 4 : 2,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                ),
+                itemCount: appState.photos.length,
+                itemBuilder: (context, index) {
+                  return _buildPhotoCard(appState.photos[index]);
+                },
+              );
   }
 
   Widget _buildSmallActionButton(String title, IconData icon, VoidCallback onTap) {

@@ -15,6 +15,7 @@ import '../screens/user_list_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
 import '../services/chat_service.dart';
+import '../utils/responsive_utils.dart';
 
 class NavDrawer extends StatefulWidget {
   final String? userEmail;
@@ -150,15 +151,32 @@ class _NavDrawerState extends State<NavDrawer> {
       child: ListView(
         padding: EdgeInsets.zero,
         children: <Widget>[
-          DrawerHeader(
-            decoration: BoxDecoration(
-              gradient: AppColors.mainGradient,
-            ),
-            child: Row(
+          ResponsiveUtils.isWideScreen(context) 
+              ? _buildDesktopHeader(context, displayUsername)
+              : _buildMobileHeader(context, displayUsername),
+          ResponsiveUtils.isWideScreen(context) 
+              ? _buildDesktopNavigation(context)
+              : _buildMobileNavigation(context),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopHeader(BuildContext context, String displayUsername) {
+    return Container(
+      height: 200,
+      decoration: BoxDecoration(
+        gradient: AppColors.mainGradient,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Close button
+            Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Close button on the left
                 IconButton(
                   onPressed: () => Navigator.pop(context),
                   icon: const Icon(
@@ -169,101 +187,247 @@ class _NavDrawerState extends State<NavDrawer> {
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
-                // User info on the right
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: MouseRegion(
-                        onEnter: (_) => setState(() => _isHovering = true),
-                        onExit: (_) => setState(() => _isHovering = false),
-                        child: GestureDetector(
-                          onTap: _isUploading ? null : _pickImage,
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              CircleAvatar(
-                                radius: 30,
-                                backgroundImage: _selectedImageBytes != null
-                                    ? MemoryImage(_selectedImageBytes!) as ImageProvider
-                                    : (_photoUrl ?? widget.userPhotoUrl) != null
-                                        ? NetworkImage((_photoUrl ?? widget.userPhotoUrl)!) as ImageProvider
-                                        : const AssetImage('assets/img/reptiGramLogo.png') as ImageProvider,
-                                onBackgroundImageError: (exception, stackTrace) {
-                                  // Handle image loading errors by showing app logo
-                                  setState(() {
-                                    _photoUrl = null;
-                                  });
-                                },
-                              ),
-                              if (_isUploading)
-                                const Positioned.fill(
-                                  child: CircularProgressIndicator(
-                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                  ),
-                                ),
-                              if (_isHovering && !_isUploading)
-                                Container(
-                                  width: 60,
-                                  height: 60,
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withOpacity(0.5),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Center(
-                                    child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.edit, color: Colors.white, size: 20),
-                                        SizedBox(height: 2),
-                                        Text(
-                                          'Change',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
+                Text(
+                  'Navigation',
+                  style: const TextStyle(
+                    color: AppColors.titleText,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            // User info
+            Row(
+              children: [
+                MouseRegion(
+                  onEnter: (_) => setState(() => _isHovering = true),
+                  onExit: (_) => setState(() => _isHovering = false),
+                  child: GestureDetector(
+                    onTap: _isUploading ? null : _pickImage,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        CircleAvatar(
+                          radius: 35,
+                          backgroundImage: _selectedImageBytes != null
+                              ? MemoryImage(_selectedImageBytes!) as ImageProvider
+                              : (_photoUrl ?? widget.userPhotoUrl) != null
+                                  ? NetworkImage((_photoUrl ?? widget.userPhotoUrl)!) as ImageProvider
+                                  : const AssetImage('assets/img/reptiGramLogo.png') as ImageProvider,
+                          onBackgroundImageError: (exception, stackTrace) {
+                            setState(() {
+                              _photoUrl = null;
+                            });
+                          },
+                        ),
+                        if (_isUploading)
+                          const Positioned.fill(
+                            child: CircularProgressIndicator(
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          ),
+                        if (_isHovering && !_isUploading)
+                          Container(
+                            width: 70,
+                            height: 70,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.5),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.edit, color: Colors.white, size: 24),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    'Change',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
                                     ),
                                   ),
-                                ),
-                            ],
+                                ],
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
+                      ],
                     ),
-                    const SizedBox(height: 10),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
                         displayUsername,
                         style: const TextStyle(
                           color: AppColors.titleText,
-                          fontSize: 18,
+                          fontSize: 20,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                    ),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
+                      const SizedBox(height: 4),
+                      Text(
                         widget.userEmail ?? '',
                         style: const TextStyle(
                           color: AppColors.titleText,
                           fontSize: 14,
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text(
+                          'Online',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileHeader(BuildContext context, String displayUsername) {
+    return DrawerHeader(
+      decoration: BoxDecoration(
+        gradient: AppColors.mainGradient,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Close button on the left
+          IconButton(
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(
+              Icons.close,
+              color: AppColors.titleText,
+              size: 24,
+            ),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
           ),
-          ListTile(
-            leading: const Icon(Icons.home),
-            title: const Text('Home'),
+          // User info on the right
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: MouseRegion(
+                  onEnter: (_) => setState(() => _isHovering = true),
+                  onExit: (_) => setState(() => _isHovering = false),
+                  child: GestureDetector(
+                    onTap: _isUploading ? null : _pickImage,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        CircleAvatar(
+                          radius: 30,
+                          backgroundImage: _selectedImageBytes != null
+                              ? MemoryImage(_selectedImageBytes!) as ImageProvider
+                              : (_photoUrl ?? widget.userPhotoUrl) != null
+                                  ? NetworkImage((_photoUrl ?? widget.userPhotoUrl)!) as ImageProvider
+                                  : const AssetImage('assets/img/reptiGramLogo.png') as ImageProvider,
+                          onBackgroundImageError: (exception, stackTrace) {
+                            setState(() {
+                              _photoUrl = null;
+                            });
+                          },
+                        ),
+                        if (_isUploading)
+                          const Positioned.fill(
+                            child: CircularProgressIndicator(
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          ),
+                        if (_isHovering && !_isUploading)
+                          Container(
+                            width: 60,
+                            height: 60,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.5),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.edit, color: Colors.white, size: 20),
+                                  SizedBox(height: 2),
+                                  Text(
+                                    'Change',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  displayUsername,
+                  style: const TextStyle(
+                    color: AppColors.titleText,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  widget.userEmail ?? '',
+                  style: const TextStyle(
+                    color: AppColors.titleText,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopNavigation(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          _buildDesktopNavItem(
+            icon: Icons.home,
+            title: 'Home',
+            subtitle: 'View and create posts',
             onTap: () {
               Navigator.pushReplacement(
                 context,
@@ -273,9 +437,11 @@ class _NavDrawerState extends State<NavDrawer> {
               );
             },
           ),
-          ListTile(
-            leading: const Icon(Icons.photo_library),
-            title: const Text('Photos'),
+          const SizedBox(height: 8),
+          _buildDesktopNavItem(
+            icon: Icons.photo_library,
+            title: 'Photos',
+            subtitle: 'Manage your albums and photos',
             onTap: () {
               Navigator.pushReplacement(
                 context,
@@ -285,47 +451,11 @@ class _NavDrawerState extends State<NavDrawer> {
               );
             },
           ),
-          ListTile(
-            leading: Stack(
-              children: [
-                const Icon(Icons.message),
-                if (user != null)
-                  StreamBuilder<int>(
-                    stream: _getUnreadMessageCount(user.uid),
-                    builder: (context, snapshot) {
-                      final unreadCount = snapshot.data ?? 0;
-                      if (unreadCount == 0) {
-                        return const SizedBox.shrink();
-                      }
-                      return Positioned(
-                        right: 0,
-                        top: 0,
-                        child: Container(
-                          padding: const EdgeInsets.all(2),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          constraints: const BoxConstraints(
-                            minWidth: 16,
-                            minHeight: 16,
-                          ),
-                          child: Text(
-                            unreadCount > 99 ? '99+' : unreadCount.toString(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-              ],
-            ),
-            title: const Text('Messenger'),
+          const SizedBox(height: 8),
+          _buildDesktopNavItem(
+            icon: Icons.message,
+            title: 'Messenger',
+            subtitle: 'Chat with other users',
             onTap: () {
               Navigator.pushReplacement(
                 context,
@@ -334,11 +464,15 @@ class _NavDrawerState extends State<NavDrawer> {
                 ),
               );
             },
+            badge: _buildUnreadBadge(),
           ),
+          const SizedBox(height: 16),
           const Divider(),
-          ListTile(
-            leading: const Icon(Icons.settings),
-            title: const Text('Settings'),
+          const SizedBox(height: 16),
+          _buildDesktopNavItem(
+            icon: Icons.settings,
+            title: 'Settings',
+            subtitle: 'Manage your account',
             onTap: () {
               Navigator.pushReplacement(
                 context,
@@ -348,9 +482,11 @@ class _NavDrawerState extends State<NavDrawer> {
               );
             },
           ),
-          ListTile(
-            leading: const Icon(Icons.logout),
-            title: const Text('Logout'),
+          const SizedBox(height: 8),
+          _buildDesktopNavItem(
+            icon: Icons.logout,
+            title: 'Logout',
+            subtitle: 'Sign out of your account',
             onTap: () async {
               try {
                 await FirebaseAuth.instance.signOut();
@@ -372,31 +508,252 @@ class _NavDrawerState extends State<NavDrawer> {
               }
             },
           ),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: ElevatedButton(
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
               onPressed: () async {
-                const url = 'https://www.paypal.com/donate?campaign_id=4ALPDNVGWDRNW'
-;
+                const url = 'https://www.paypal.com/donate?campaign_id=4ALPDNVGWDRNW';
                 if (await canLaunchUrl(Uri.parse(url))) {
                   await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
                 } else {
                   throw 'Could not launch $url';
                 }
               },
+              icon: const Icon(Icons.favorite),
+              label: const Text('Donate to ReptiGram'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green.shade700,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              child: const Text(
-                'Donate to ReptiGram',
-                style: TextStyle(fontSize: 16, color: Colors.white),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildMobileNavigation(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    
+    return Column(
+      children: [
+        ListTile(
+          leading: const Icon(Icons.home),
+          title: const Text('Home'),
+          onTap: () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const PostScreen(),
+              ),
+            );
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.photo_library),
+          title: const Text('Photos'),
+          onTap: () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const AlbumsScreen(),
+              ),
+            );
+          },
+        ),
+        ListTile(
+          leading: Stack(
+            children: [
+              const Icon(Icons.message),
+              if (user != null)
+                StreamBuilder<int>(
+                  stream: _getUnreadMessageCount(user.uid),
+                  builder: (context, snapshot) {
+                    final unreadCount = snapshot.data ?? 0;
+                    if (unreadCount == 0) {
+                      return const SizedBox.shrink();
+                    }
+                    return Positioned(
+                      right: 0,
+                      top: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 16,
+                          minHeight: 16,
+                        ),
+                        child: Text(
+                          unreadCount > 99 ? '99+' : unreadCount.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
+          title: const Text('Messenger'),
+          onTap: () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const UserListScreen(),
+              ),
+            );
+          },
+        ),
+        const Divider(),
+        ListTile(
+          leading: const Icon(Icons.settings),
+          title: const Text('Settings'),
+          onTap: () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => SettingsScreen(),
+              ),
+            );
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.logout),
+          title: const Text('Logout'),
+          onTap: () async {
+            try {
+              await FirebaseAuth.instance.signOut();
+              if (context.mounted) {
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const LoginScreen(),
+                  ),
+                  (route) => false,
+                );
+              }
+            } catch (e) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Error signing out: $e')),
+                );
+              }
+            }
+          },
+        ),
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: ElevatedButton(
+            onPressed: () async {
+              const url = 'https://www.paypal.com/donate?campaign_id=4ALPDNVGWDRNW';
+              if (await canLaunchUrl(Uri.parse(url))) {
+                await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+              } else {
+                throw 'Could not launch $url';
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green.shade700,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text(
+              'Donate to ReptiGram',
+              style: TextStyle(fontSize: 16, color: Colors.white),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDesktopNavItem({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    Widget? badge,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.all(16),
+        leading: Stack(
+          children: [
+            Icon(icon, color: AppColors.titleText, size: 24),
+            if (badge != null) badge,
+          ],
+        ),
+        title: Text(
+          title,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+          ),
+        ),
+        onTap: onTap,
+      ),
+    );
+  }
+
+  Widget _buildUnreadBadge() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const SizedBox.shrink();
+    
+    return StreamBuilder<int>(
+      stream: _getUnreadMessageCount(user.uid),
+      builder: (context, snapshot) {
+        final unreadCount = snapshot.data ?? 0;
+        if (unreadCount == 0) {
+          return const SizedBox.shrink();
+        }
+        return Positioned(
+          right: 0,
+          top: 0,
+          child: Container(
+            padding: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              color: Colors.red,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            constraints: const BoxConstraints(
+              minWidth: 16,
+              minHeight: 16,
+            ),
+            child: Text(
+              unreadCount > 99 ? '99+' : unreadCount.toString(),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        );
+      },
     );
   }
 

@@ -8,11 +8,11 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import '../styles/colors.dart';
 import '../common/header.dart';
 import '../common/title_header.dart';
+import '../utils/responsive_utils.dart';
 import '../models/photo_data.dart';
 import '../state/app_state.dart';
 import '../services/firestore_service.dart';
 import 'dart:typed_data';
-import '../utils/responsive_utils.dart';
 
 class FeedScreen extends StatefulWidget {
   final bool showLikedOnly;
@@ -648,6 +648,10 @@ class _FeedScreenState extends State<FeedScreen> {
   @override
   Widget build(BuildContext context) {
     final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
+    final isWideScreen = ResponsiveUtils.isWideScreen(context);
+    final maxContentWidth = ResponsiveUtils.getMaxContentWidth(context);
+    final responsivePadding = ResponsiveUtils.getResponsivePadding(context);
+    final gridCrossAxisCount = ResponsiveUtils.getResponsiveGridCrossAxisCount(context);
     
     return Scaffold(
       body: Container(
@@ -656,228 +660,70 @@ class _FeedScreenState extends State<FeedScreen> {
           gradient: AppColors.mainGradient,
         ),
         child: SafeArea(
-          child: ResponsiveUtils.isWideScreen(context) 
-              ? _buildDesktopLayout(context, currentUser)
-              : _buildMobileLayout(context, currentUser),
+          child: ResponsiveUtils.responsiveWrapper(
+            context: context,
+            maxWidth: maxContentWidth,
+            child: Column(
+              children: [
+                const TitleHeader(),
+                const Header(initialIndex: 2),
+                Expanded(
+                  child: _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : widget.showLikedOnly && currentUser == null
+                          ? Center(
+                              child: Text(
+                                'Please log in to view liked photos',
+                                style: TextStyle(
+                                  color: AppColors.titleText,
+                                  fontSize: ResponsiveUtils.getResponsiveFontSize(context, 
+                                    mobile: 18.0, 
+                                    tablet: 20.0, 
+                                    desktop: 22.0, 
+                                    largeDesktop: 24.0
+                                  ),
+                                ),
+                              ),
+                            )
+                          : _photos.isEmpty
+                              ? Center(
+                                  child: Text(
+                                    widget.showLikedOnly 
+                                        ? 'No liked photos yet'
+                                        : 'No photos available',
+                                    style: TextStyle(
+                                      color: AppColors.titleText,
+                                      fontSize: ResponsiveUtils.getResponsiveFontSize(context, 
+                                        mobile: 18.0, 
+                                        tablet: 20.0, 
+                                        desktop: 22.0, 
+                                        largeDesktop: 24.0
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : RefreshIndicator(
+                                  onRefresh: _loadPhotos,
+                                  child: GridView.builder(
+                                    padding: EdgeInsets.all(responsivePadding),
+                                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: gridCrossAxisCount,
+                                      crossAxisSpacing: isWideScreen ? 16.0 : 8.0,
+                                      mainAxisSpacing: isWideScreen ? 16.0 : 8.0,
+                                      childAspectRatio: ResponsiveUtils.getResponsiveGridChildAspectRatio(context),
+                                    ),
+                                    itemCount: _photos.length,
+                                    itemBuilder: (context, index) => _buildGridItem(_photos[index]),
+                                  ),
+                                ),
+              ),
+            ],
+          ),
         ),
       ),
-    );
-  }
-
-  Widget _buildDesktopLayout(BuildContext context, dynamic currentUser) {
-    return Column(
-      children: [
-        const TitleHeader(),
-        const Header(initialIndex: 2),
-        Expanded(
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 1400),
-            margin: const EdgeInsets.symmetric(horizontal: 24.0),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Left side - Feed info and controls
-                Expanded(
-                  flex: 1,
-                  child: Container(
-                    margin: const EdgeInsets.only(top: 24.0, right: 16.0),
-                    child: Card(
-                      elevation: 8,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Color(0xFFFFF8E1), // Light cream
-                              Color(0xFFFFE0B2), // Light orange
-                              Color(0xFFFFCC80), // Medium orange
-                            ],
-                            stops: [0.0, 0.5, 1.0],
-                          ),
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(24.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                widget.showLikedOnly ? 'Liked Photos' : 'Photo Feed',
-                                style: const TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.titleText,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                widget.showLikedOnly 
-                                    ? 'Your favorite photos from the community'
-                                    : 'Discover amazing reptile photos from the community',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  color: AppColors.titleText,
-                                  fontWeight: FontWeight.w300,
-                                ),
-                              ),
-                              const SizedBox(height: 20),
-                              _buildFeedStats(),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                // Right side - Photos grid
-                Expanded(
-                  flex: 2,
-                  child: Container(
-                    margin: const EdgeInsets.only(top: 24.0),
-                    child: _buildPhotosGrid(context, currentUser),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMobileLayout(BuildContext context, dynamic currentUser) {
-    return Column(
-      children: [
-        const TitleHeader(),
-        const Header(initialIndex: 2),
-        Expanded(
-          child: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : widget.showLikedOnly && currentUser == null
-                  ? const Center(
-                      child: Text(
-                        'Please log in to view liked photos',
-                        style: TextStyle(
-                          color: AppColors.titleText,
-                          fontSize: 18,
-                        ),
-                      ),
-                    )
-                  : _photos.isEmpty
-                      ? Center(
-                          child: Text(
-                            widget.showLikedOnly 
-                                ? 'No liked photos yet'
-                                : 'No photos available',
-                            style: const TextStyle(
-                              color: AppColors.titleText,
-                              fontSize: 18,
-                            ),
-                          ),
-                        )
-                      : RefreshIndicator(
-                          onRefresh: _loadPhotos,
-                          child: GridView.builder(
-                            padding: const EdgeInsets.all(8.0),
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              crossAxisSpacing: 8.0,
-                              mainAxisSpacing: 8.0,
-                            ),
-                            itemCount: _photos.length,
-                            itemBuilder: (context, index) => _buildGridItem(_photos[index]),
-                          ),
-                        ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFeedStats() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Total Photos: ${_photos.length}',
-          style: const TextStyle(
-            fontSize: 16,
-            color: AppColors.titleText,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 8),
-        if (widget.showLikedOnly)
-          Text(
-            'Your Liked Photos',
-            style: const TextStyle(
-              fontSize: 16,
-              color: AppColors.titleText,
-              fontWeight: FontWeight.w500,
-            ),
-          )
-        else
-          Text(
-            'Community Feed',
-            style: const TextStyle(
-              fontSize: 16,
-              color: AppColors.titleText,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildPhotosGrid(BuildContext context, dynamic currentUser) {
-    return _isLoading
-        ? const Center(child: CircularProgressIndicator())
-        : widget.showLikedOnly && currentUser == null
-            ? const Center(
-                child: Text(
-                  'Please log in to view liked photos',
-                  style: TextStyle(
-                    color: AppColors.titleText,
-                    fontSize: 18,
-                  ),
-                ),
-              )
-            : _photos.isEmpty
-                ? Center(
-                    child: Text(
-                      widget.showLikedOnly 
-                          ? 'No liked photos yet'
-                          : 'No photos available',
-                      style: const TextStyle(
-                        color: AppColors.titleText,
-                        fontSize: 18,
-                      ),
-                    ),
-                  )
-                : RefreshIndicator(
-                    onRefresh: _loadPhotos,
-                    child: GridView.builder(
-                      padding: const EdgeInsets.all(8.0),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: ResponsiveUtils.isWideScreen(context) ? 4 : 2,
-                        crossAxisSpacing: 8.0,
-                        mainAxisSpacing: 8.0,
-                      ),
-                      itemCount: _photos.length,
-                      itemBuilder: (context, index) => _buildGridItem(_photos[index]),
-                    ),
-                  );
-  }
+    ), // <-- Add this to close ResponsiveUtils.responsiveWrapper
+  );
+}
 }
 
 class FullScreenPhotoView extends StatefulWidget {
@@ -1070,6 +916,9 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
 
   @override
   Widget build(BuildContext context) {
+    final isWideScreen = ResponsiveUtils.isWideScreen(context);
+    final maxContentWidth = ResponsiveUtils.getMaxContentWidth(context);
+    
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -1081,7 +930,10 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
         ),
         actions: [
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: EdgeInsets.symmetric(
+              horizontal: isWideScreen ? 24 : 16, 
+              vertical: 8
+            ),
             child: Row(
               children: [
                 // Likes count
@@ -1089,9 +941,9 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
                   children: [
                     Text(
                       '${widget.photo.likesCount}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Colors.white,
-                        fontSize: 16,
+                        fontSize: ResponsiveUtils.getResponsiveFontSize(context),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -1112,13 +964,13 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
                         child: Icon(
                           widget.photo.isLiked ? Icons.favorite : Icons.favorite_border,
                           color: widget.photo.isLiked ? Colors.red : Colors.white,
-                          size: 24,
+                          size: isWideScreen ? 28 : 24,
                         ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(width: 16),
+                SizedBox(width: isWideScreen ? 24 : 16),
                 // Comments count
                 StreamBuilder<QuerySnapshot>(
                   stream: FirestoreService.comments
@@ -1130,16 +982,16 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
                       children: [
                         Text(
                           '$commentCount',
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: Colors.white,
-                            fontSize: 16,
+                            fontSize: ResponsiveUtils.getResponsiveFontSize(context),
                           ),
                         ),
                         const SizedBox(width: 4),
-                        const Icon(
+                        Icon(
                           Icons.comment,
                           color: Colors.white,
-                          size: 20,
+                          size: isWideScreen ? 24 : 20,
                         ),
                       ],
                     );
@@ -1150,469 +1002,350 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
           ),
         ],
       ),
-      body: ResponsiveUtils.isWideScreen(context) 
-          ? _buildDesktopLayout(context)
-          : _buildMobileLayout(context),
-    );
-  }
-
-  Widget _buildDesktopLayout(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 1400),
-      margin: const EdgeInsets.symmetric(horizontal: 24.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Left side - Image viewer
-          Expanded(
-            flex: 2,
-            child: Container(
-              margin: const EdgeInsets.only(top: 24.0, right: 16.0),
-              child: Card(
-                elevation: 8,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.black,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: InteractiveViewer(
-                      minScale: 0.5,
-                      maxScale: 4.0,
-                      child: Hero(
-                        tag: widget.photo.id,
-                        child: widget.photo.firebaseUrl != null
-                            ? Image.network(
-                                widget.photo.firebaseUrl!,
-                                fit: BoxFit.contain,
-                              )
-                            : const Icon(Icons.image, size: 100, color: Colors.white),
-                      ),
-                    ),
+      body: ResponsiveUtils.responsiveWrapper(
+        context: context,
+        maxWidth: maxContentWidth,
+        child: Column(
+          children: [
+            // Image viewer
+            Expanded(
+              child: Center(
+                child: InteractiveViewer(
+                  minScale: 0.5,
+                  maxScale: 4.0,
+                  child: Hero(
+                    tag: widget.photo.id,
+                    child: widget.photo.firebaseUrl != null
+                        ? Image.network(
+                            widget.photo.firebaseUrl!,
+                            fit: BoxFit.contain,
+                          )
+                        : Icon(
+                            Icons.image, 
+                            size: isWideScreen ? 150 : 100, 
+                            color: Colors.white
+                          ),
                   ),
                 ),
               ),
             ),
-          ),
-          // Right side - Comments section
-          Expanded(
-            flex: 1,
-            child: Container(
-              margin: const EdgeInsets.only(top: 24.0),
-              child: Card(
-                elevation: 8,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Color(0xFFFFF8E1), // Light cream
-                        Color(0xFFFFE0B2), // Light orange
-                        Color(0xFFFFCC80), // Medium orange
-                      ],
-                      stops: [0.0, 0.5, 1.0],
+            // Comments section
+            Container(
+              height: MediaQuery.of(context).size.height * 0.4,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  // Comments header
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
                     ),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Column(
-                    children: [
-                      // Comments header
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: Colors.brown.withOpacity(0.1),
-                          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.comment, color: Colors.brown),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Comments',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.brown,
+                          ),
                         ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.comment, color: Colors.brown),
-                            const SizedBox(width: 8),
-                            const Text(
-                              'Comments',
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: StreamBuilder<QuerySnapshot>(
+                      stream: FirestoreService.comments
+                          .where('photoId', isEqualTo: widget.photo.id)
+                          .limit(100)
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        print('Comments snapshot: ${snapshot.hasData}');
+                        if (snapshot.hasData) {
+                          print('Comments count: ${snapshot.data!.docs.length}');
+                          print('Snapshot connection state: ${snapshot.connectionState}');
+                          for (var doc in snapshot.data!.docs) {
+                            print('Comment data: ${doc.data()}');
+                          }
+                        }
+                        
+                        // Show loading while waiting for data
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+                        
+                        // Show error if there's an error
+                        if (snapshot.hasError) {
+                          print('Comments error: ${snapshot.error}');
+                          return Center(
+                            child: Text(
+                              'Error loading comments: ${snapshot.error}',
+                              style: const TextStyle(color: Colors.red),
+                            ),
+                          );
+                        }
+                        
+                        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                          print('No comments to display!');
+                          return const Center(
+                            child: Text(
+                              'No comments yet',
                               style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.brown,
+                                color: Colors.grey,
+                                fontSize: 16,
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                      // Comments list
-                      Expanded(
-                        child: _buildCommentsList(),
-                      ),
-                      // Comment input
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.8),
-                          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
-                        ),
-                        child: _buildCommentInput(),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+                          );
+                        }
 
-  Widget _buildMobileLayout(BuildContext context) {
-    return Column(
-      children: [
-        // Image viewer
-        Expanded(
-          child: Center(
-            child: InteractiveViewer(
-              minScale: 0.5,
-              maxScale: 4.0,
-              child: Hero(
-                tag: widget.photo.id,
-                child: widget.photo.firebaseUrl != null
-                    ? Image.network(
-                        widget.photo.firebaseUrl!,
-                        fit: BoxFit.contain,
-                      )
-                    : const Icon(Icons.image, size: 100, color: Colors.white),
-              ),
-            ),
-          ),
-        ),
-        // Comments section
-        Container(
-          height: MediaQuery.of(context).size.height * 0.4,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            children: [
-              // Comments header
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.grey[50],
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.comment, color: Colors.brown),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Comments',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.brown,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: _buildCommentsList(),
-              ),
-              // Comment input
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: _buildCommentInput(),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
+                        final commentsList = snapshot.data!.docs.map((doc) {
+                          final data = doc.data() as Map<String, dynamic>;
+                          print('Processing comment: $data');
+                          
+                          // Handle timestamp more robustly
+                          int timestamp;
+                          if (data['timestamp'] is Timestamp) {
+                            timestamp = (data['timestamp'] as Timestamp).millisecondsSinceEpoch;
+                          } else if (data['timestamp'] is int) {
+                            timestamp = data['timestamp'] as int;
+                          } else {
+                            timestamp = DateTime.now().millisecondsSinceEpoch;
+                          }
+                          
+                          return {
+                            'userId': data['userId'] as String? ?? 'unknown',
+                            'content': data['content'] as String? ?? '',
+                            'timestamp': timestamp,
+                            'imageUrl': data['imageUrl'] as String?,
+                          };
+                        }).toList()
+                          ..sort((a, b) => (a['timestamp'] as int).compareTo(b['timestamp'] as int)); // Sort oldest first
 
-  Widget _buildCommentsList() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirestoreService.comments
-          .where('photoId', isEqualTo: widget.photo.id)
-          .limit(100)
-          .snapshots(),
-      builder: (context, snapshot) {
-        print('Comments snapshot: ${snapshot.hasData}');
-        if (snapshot.hasData) {
-          print('Comments count: ${snapshot.data!.docs.length}');
-          print('Snapshot connection state: ${snapshot.connectionState}');
-          for (var doc in snapshot.data!.docs) {
-            print('Comment data: ${doc.data()}');
-          }
-        }
-        
-        // Show loading while waiting for data
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(),
-          );
-        }
-        
-        // Show error if there's an error
-        if (snapshot.hasError) {
-          print('Comments error: ${snapshot.error}');
-          return Center(
-            child: Text(
-              'Error loading comments: ${snapshot.error}',
-              style: const TextStyle(color: Colors.red),
-            ),
-          );
-        }
-        
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          print('No comments to display!');
-          return const Center(
-            child: Text(
-              'No comments yet',
-              style: TextStyle(
-                color: Colors.grey,
-                fontSize: 16,
-              ),
-            ),
-          );
-        }
-
-        final commentsList = snapshot.data!.docs.map((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          print('Processing comment: $data');
-          
-          // Handle timestamp more robustly
-          int timestamp;
-          if (data['timestamp'] is Timestamp) {
-            timestamp = (data['timestamp'] as Timestamp).millisecondsSinceEpoch;
-          } else if (data['timestamp'] is int) {
-            timestamp = data['timestamp'] as int;
-          } else {
-            timestamp = DateTime.now().millisecondsSinceEpoch;
-          }
-          
-          return {
-            'userId': data['userId'] as String? ?? 'unknown',
-            'content': data['content'] as String? ?? '',
-            'timestamp': timestamp,
-            'imageUrl': data['imageUrl'] as String?,
-          };
-        }).toList()
-          ..sort((a, b) => (a['timestamp'] as int).compareTo(b['timestamp'] as int)); // Sort oldest first
-
-        return ListView.builder(
-          controller: _scrollController,
-          padding: const EdgeInsets.only(bottom: 8),
-          physics: const AlwaysScrollableScrollPhysics(),
-          itemCount: commentsList.length,
-          itemBuilder: (context, index) {
-            final comment = commentsList[index];
-            return FutureBuilder<String?>(
-              future: Provider.of<AppState>(context, listen: false)
-                  .fetchUsername(comment['userId'] as String),
-              builder: (context, usernameSnapshot) {
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildUserAvatar(comment['userId'] as String),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Text(
-                                  usernameSnapshot.data ?? 'Loading...',
-                                  style: const TextStyle(
-                                    color: Colors.brown,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
+                        return ListView.builder(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.only(bottom: 8),
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          itemCount: commentsList.length,
+                          itemBuilder: (context, index) {
+                            final comment = commentsList[index];
+                            return FutureBuilder<String?>(
+                              future: Provider.of<AppState>(context, listen: false)
+                                  .fetchUsername(comment['userId'] as String),
+                              builder: (context, usernameSnapshot) {
+                                return Container(
+                                  margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[100],
+                                    borderRadius: BorderRadius.circular(8),
                                   ),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      _buildUserAvatar(comment['userId'] as String),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Text(
+                                                  usernameSnapshot.data ?? 'Loading...',
+                                                  style: const TextStyle(
+                                                    color: Colors.brown,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 14,
+                                                  ),
+                                                ),
+                                                const Spacer(),
+                                                Text(
+                                                  _formatTimestamp(comment['timestamp'] as int),
+                                                  style: TextStyle(
+                                                    color: Colors.brown[400],
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              comment['content'] as String,
+                                              style: const TextStyle(
+                                                color: Colors.black87,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                            // Show image if comment has one
+                                            if (comment['imageUrl'] != null) ...[
+                                              const SizedBox(height: 8),
+                                              Container(
+                                                height: 120,
+                                                width: 120,
+                                                decoration: BoxDecoration(
+                                                  border: Border.all(color: Colors.grey[300]!),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                ),
+                                                child: ClipRRect(
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  child: Image.network(
+                                                    comment['imageUrl'] as String,
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder: (context, error, stackTrace) {
+                                                      return Container(
+                                                        color: Colors.grey[200],
+                                                        child: const Icon(
+                                                          Icons.error,
+                                                          color: Colors.grey,
+                                                        ),
+                                                      );
+                                                    },
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                  // Comment input
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Column(
+                      children: [
+                        // Image preview
+                        if (_selectedCommentImage != null)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            height: 120,
+                            width: 120,
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.grey),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Stack(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: kIsWeb
+                                      ? FutureBuilder<Uint8List>(
+                                          future: _selectedCommentImage!.readAsBytes(),
+                                          builder: (context, snapshot) {
+                                            if (snapshot.hasData) {
+                                              return Image.memory(
+                                                snapshot.data!,
+                                                fit: BoxFit.cover,
+                                                width: 120,
+                                                height: 120,
+                                              );
+                                            } else {
+                                              return const Center(
+                                                child: CircularProgressIndicator(),
+                                              );
+                                            }
+                                          },
+                                        )
+                                      : Image.file(
+                                          File(_selectedCommentImage!.path),
+                                          fit: BoxFit.cover,
+                                          width: 120,
+                                          height: 120,
+                                        ),
                                 ),
-                                const Spacer(),
-                                Text(
-                                  _formatTimestamp(comment['timestamp'] as int),
-                                  style: TextStyle(
-                                    color: Colors.brown[400],
-                                    fontSize: 12,
+                                Positioned(
+                                  top: 4,
+                                  right: 4,
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      setState(() {
+                                        _selectedCommentImage = null;
+                                      });
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: const BoxDecoration(
+                                        color: Colors.red,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.close,
+                                        color: Colors.white,
+                                        size: 16,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 8),
-                            Text(
-                              comment['content'] as String,
-                              style: const TextStyle(
-                                color: Colors.black87,
-                                fontSize: 14,
+                          ),
+                        Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.image, color: Colors.brown),
+                              onPressed: () async {
+                                final ImagePicker picker = ImagePicker();
+                                final XFile? image = await picker.pickImage(
+                                  source: ImageSource.gallery,
+                                  imageQuality: 85,
+                                  maxWidth: 1024,
+                                  maxHeight: 1024,
+                                );
+                                if (image != null) {
+                                  setState(() {
+                                    _selectedCommentImage = image;
+                                  });
+                                }
+                              },
+                            ),
+                            Expanded(
+                              child: TextField(
+                                controller: _commentController,
+                                decoration: const InputDecoration(
+                                  hintText: 'Add a comment...',
+                                  border: OutlineInputBorder(),
+                                ),
+                                maxLines: null,
+                                textInputAction: TextInputAction.send,
+                                onSubmitted: (text) => _postComment(text),
                               ),
                             ),
-                            // Show image if comment has one
-                            if (comment['imageUrl'] != null) ...[
-                              const SizedBox(height: 8),
-                              Container(
-                                height: 120,
-                                width: 120,
-                                decoration: BoxDecoration(
-                                  border: Border.all(color: Colors.grey[300]!),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(
-                                    comment['imageUrl'] as String,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Container(
-                                        color: Colors.grey[200],
-                                        child: const Icon(
-                                          Icons.error,
-                                          color: Colors.grey,
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-                              ),
-                            ],
+                            IconButton(
+                              icon: const Icon(Icons.send),
+                              onPressed: () => _postComment(_commentController.text),
+                              color: Theme.of(context).primaryColor,
+                            ),
                           ],
                         ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildCommentInput() {
-    return Column(
-      children: [
-        // Image preview
-        if (_selectedCommentImage != null)
-          Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            height: 120,
-            width: 120,
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Stack(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: kIsWeb
-                      ? FutureBuilder<Uint8List>(
-                          future: _selectedCommentImage!.readAsBytes(),
-                          builder: (context, snapshot) {
-                            if (snapshot.hasData) {
-                              return Image.memory(
-                                snapshot.data!,
-                                fit: BoxFit.cover,
-                                width: 120,
-                                height: 120,
-                              );
-                            } else {
-                              return const Center(
-                                child: CircularProgressIndicator(),
-                              );
-                            }
-                          },
-                        )
-                      : Image.file(
-                          File(_selectedCommentImage!.path),
-                          fit: BoxFit.cover,
-                          width: 120,
-                          height: 120,
-                        ),
-                ),
-                Positioned(
-                  top: 4,
-                  right: 4,
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedCommentImage = null;
-                      });
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.close,
-                        color: Colors.white,
-                        size: 16,
-                      ),
+                      ],
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
-        Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.image, color: Colors.brown),
-              onPressed: () async {
-                final ImagePicker picker = ImagePicker();
-                final XFile? image = await picker.pickImage(
-                  source: ImageSource.gallery,
-                  imageQuality: 85,
-                  maxWidth: 1024,
-                  maxHeight: 1024,
-                );
-                if (image != null) {
-                  setState(() {
-                    _selectedCommentImage = image;
-                  });
-                }
-              },
-            ),
-            Expanded(
-              child: TextField(
-                controller: _commentController,
-                decoration: const InputDecoration(
-                  hintText: 'Add a comment...',
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: null,
-                textInputAction: TextInputAction.send,
-                onSubmitted: (text) => _postComment(text),
+                ],
               ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.send),
-              onPressed: () => _postComment(_commentController.text),
-              color: Theme.of(context).primaryColor,
             ),
           ],
         ),
-      ],
-    );
-  }
+      ),
+    ), // <-- Add this to close ResponsiveUtils.responsiveWrapper
+  );
+}
 
   String _formatTimestamp(int timestamp) {
     final date = DateTime.fromMillisecondsSinceEpoch(timestamp);

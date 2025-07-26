@@ -18,6 +18,7 @@ import '../constants/photo_sources.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:html' as html;
+import '../utils/responsive_utils.dart';
 
 class AlbumsScreen extends StatefulWidget {
   const AlbumsScreen({super.key});
@@ -235,145 +236,349 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
           gradient: AppColors.mainGradient,
         ),
         child: SafeArea(
-          child: Column(
-            children: [
-              const TitleHeader(),
-              const Header(initialIndex: 0),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 20.0),
-                      // Action Buttons at the top
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _buildActionButton(
-                            'Create Album',
-                            Icons.create_new_folder,
-                            () {
-                              _createNewAlbum();
-                            },
-                          ),
-                          _buildActionButton(
-                            'Add Image',
-                            Icons.add_photo_alternate,
-                            () async {
-                              final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
-                              if (currentUser == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Please log in to upload photos')),
-                                );
-                                return;
-                              }
-
-                              try {
-                                final XFile? pickedFile = await _picker.pickImage(
-                                  source: ImageSource.gallery,
-                                  imageQuality: 85,
-                                );
-
-                                if (pickedFile == null) return;
-
-                                showDialog(
-                                  context: context,
-                                  barrierDismissible: false,
-                                  builder: (BuildContext context) {
-                                    return const Center(
-                                      child: CircularProgressIndicator(),
-                                    );
-                                  },
-                                );
-
-                                final String photoId = DateTime.now().millisecondsSinceEpoch.toString();
-                                final storageRef = FirebaseStorage.instance
-                                    .ref()
-                                    .child('photos')
-                                    .child(currentUser.uid)
-                                    .child(photoId);
-
-                                if (kIsWeb) {
-                                  final bytes = await pickedFile.readAsBytes();
-                                  await storageRef.putData(
-                                    bytes,
-                                    SettableMetadata(contentType: 'image/jpeg'),
-                                  );
-                                } else {
-                                  await storageRef.putFile(
-                                    File(pickedFile.path),
-                                    SettableMetadata(contentType: 'image/jpeg'),
-                                  );
-                                }
-
-                                final downloadUrl = await storageRef.getDownloadURL();
-
-                                // Firestore: Save photo with hierarchy info
-                                await FirestoreService.photos.doc(photoId).set({
-                                  'url': downloadUrl,
-                                  'timestamp': FieldValue.serverTimestamp(),
-                                  'albumName': 'Unsorted', // Photos go to main grid
-                                  'userId': currentUser.uid,
-                                  'source': PhotoSources.albums,
-                                });
-
-                                Navigator.pop(context); // Hide loading indicator
-                                await _loadAlbumPhotos(); // Reload photos
-
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Photo uploaded successfully!')),
-                                );
-                              } catch (e) {
-                                print('Error uploading photo: $e');
-                                Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Failed to upload photo: ${e.toString()}')),
-                                );
-                              }
-                            },
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 74),
-                      // Albums and Photos Grid
-                      Expanded(
-                        child: _isLoading && albumPhotos.isEmpty
-                          ? const Center(child: CircularProgressIndicator())
-                          : GridView.builder(
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 3,
-                                crossAxisSpacing: 8,
-                                mainAxisSpacing: 8,
-                                childAspectRatio: 0.75,
-                              ),
-                              itemCount: albums.length + (albumPhotos['Main Grid']?.length ?? 0),
-                              itemBuilder: (context, index) {
-                                // First show albums
-                                if (index < albums.length) {
-                                  return _buildAlbumCard(albums[index]);
-                                } 
-                                // Then show photos from main grid
-                                else {
-                                  final photoIndex = index - albums.length;
-                                  if (albumPhotos['Main Grid'] != null && 
-                                      photoIndex < albumPhotos['Main Grid']!.length) {
-                                    final photo = albumPhotos['Main Grid']![photoIndex];
-                                    return _buildPhotoCard(photo);
-                                  }
-                                  return const SizedBox();
-                                }
-                              },
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
+          child: ResponsiveUtils.isWideScreen(context) 
+              ? _buildDesktopLayout(context)
+              : _buildMobileLayout(context),
         ),
       ),
     );
+  }
+
+  Widget _buildDesktopLayout(BuildContext context) {
+    return Column(
+      children: [
+        const TitleHeader(),
+        const Header(initialIndex: 0),
+        Expanded(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 1400),
+            margin: const EdgeInsets.symmetric(horizontal: 24.0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Left side - Action buttons and controls
+                Expanded(
+                  flex: 1,
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 24.0, right: 16.0),
+                    child: Card(
+                      elevation: 8,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFFFFF8E1), // Light cream
+                              Color(0xFFFFE0B2), // Light orange
+                              Color(0xFFFFCC80), // Medium orange
+                            ],
+                            stops: [0.0, 0.5, 1.0],
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(24.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Albums',
+                                style: TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.titleText,
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              _buildActionButtons(context),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Right side - Albums and photos grid
+                Expanded(
+                  flex: 2,
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 24.0),
+                    child: _buildAlbumsGrid(context),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMobileLayout(BuildContext context) {
+    return Column(
+      children: [
+        const TitleHeader(),
+        const Header(initialIndex: 0),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                const SizedBox(height: 20.0),
+                // Action Buttons at the top
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildActionButton(
+                      'Create Album',
+                      Icons.create_new_folder,
+                      () {
+                        _createNewAlbum();
+                      },
+                    ),
+                    _buildActionButton(
+                      'Add Image',
+                      Icons.add_photo_alternate,
+                      () async {
+                        final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
+                        if (currentUser == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Please log in to upload photos')),
+                          );
+                          return;
+                        }
+
+                        try {
+                          final XFile? pickedFile = await _picker.pickImage(
+                            source: ImageSource.gallery,
+                            imageQuality: 85,
+                          );
+
+                          if (pickedFile == null) return;
+
+                          showDialog(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (BuildContext context) {
+                              return const Center(
+                                child: CircularProgressIndicator(),
+                              );
+                            },
+                          );
+
+                          final String photoId = DateTime.now().millisecondsSinceEpoch.toString();
+                          final storageRef = FirebaseStorage.instance
+                              .ref()
+                              .child('photos')
+                              .child(currentUser.uid)
+                              .child(photoId);
+
+                          if (kIsWeb) {
+                            final bytes = await pickedFile.readAsBytes();
+                            await storageRef.putData(
+                              bytes,
+                              SettableMetadata(contentType: 'image/jpeg'),
+                            );
+                          } else {
+                            await storageRef.putFile(
+                              File(pickedFile.path),
+                              SettableMetadata(contentType: 'image/jpeg'),
+                            );
+                          }
+
+                          final downloadUrl = await storageRef.getDownloadURL();
+
+                          // Firestore: Save photo with hierarchy info
+                          await FirestoreService.photos.doc(photoId).set({
+                            'url': downloadUrl,
+                            'timestamp': FieldValue.serverTimestamp(),
+                            'albumName': 'Unsorted', // Photos go to main grid
+                            'userId': currentUser.uid,
+                            'source': PhotoSources.albums,
+                          });
+
+                          Navigator.pop(context); // Hide loading indicator
+                          await _loadAlbumPhotos(); // Reload photos
+
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Photo uploaded successfully!')),
+                          );
+                        } catch (e) {
+                          print('Error uploading photo: $e');
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed to upload photo: ${e.toString()}')),
+                          );
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 74),
+                // Albums and Photos Grid
+                Expanded(
+                  child: _buildAlbumsGrid(context),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActionButtons(BuildContext context) {
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () {
+              _createNewAlbum();
+            },
+            icon: const Icon(Icons.create_new_folder),
+            label: const Text('Create Album'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.titleText,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () async {
+              final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
+              if (currentUser == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please log in to upload photos')),
+                );
+                return;
+              }
+
+              try {
+                final XFile? pickedFile = await _picker.pickImage(
+                  source: ImageSource.gallery,
+                  imageQuality: 85,
+                );
+
+                if (pickedFile == null) return;
+
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (BuildContext context) {
+                    return const Center(
+                      child: CircularProgressIndicator(),
+                    );
+                  },
+                );
+
+                final String photoId = DateTime.now().millisecondsSinceEpoch.toString();
+                final storageRef = FirebaseStorage.instance
+                    .ref()
+                    .child('photos')
+                    .child(currentUser.uid)
+                    .child(photoId);
+
+                if (kIsWeb) {
+                  final bytes = await pickedFile.readAsBytes();
+                  await storageRef.putData(
+                    bytes,
+                    SettableMetadata(contentType: 'image/jpeg'),
+                  );
+                } else {
+                  await storageRef.putFile(
+                    File(pickedFile.path),
+                    SettableMetadata(contentType: 'image/jpeg'),
+                  );
+                }
+
+                final downloadUrl = await storageRef.getDownloadURL();
+
+                // Firestore: Save photo with hierarchy info
+                await FirestoreService.photos.doc(photoId).set({
+                  'url': downloadUrl,
+                  'timestamp': FieldValue.serverTimestamp(),
+                  'albumName': 'Unsorted', // Photos go to main grid
+                  'userId': currentUser.uid,
+                  'source': PhotoSources.albums,
+                });
+
+                Navigator.pop(context); // Hide loading indicator
+                await _loadAlbumPhotos(); // Reload photos
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Photo uploaded successfully!')),
+                );
+              } catch (e) {
+                print('Error uploading photo: $e');
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Failed to upload photo: ${e.toString()}')),
+                );
+              }
+            },
+            icon: const Icon(Icons.add_photo_alternate),
+            label: const Text('Add Image'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.titleText,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAlbumsGrid(BuildContext context) {
+    return _isLoading && albumPhotos.isEmpty
+        ? const Center(child: CircularProgressIndicator())
+        : GridView.builder(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: ResponsiveUtils.isWideScreen(context) ? 4 : 3,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              childAspectRatio: 0.75,
+            ),
+            itemCount: albums.length + (albumPhotos['Main Grid']?.length ?? 0),
+            itemBuilder: (context, index) {
+              // First show albums
+              if (index < albums.length) {
+                return _buildAlbumCard(albums[index]);
+              } 
+              // Then show photos from main grid
+              else {
+                final photoIndex = index - albums.length;
+                if (albumPhotos['Main Grid'] != null && 
+                    photoIndex < albumPhotos['Main Grid']!.length) {
+                  final photo = albumPhotos['Main Grid']![photoIndex];
+                  return _buildPhotoCard(photo);
+                }
+                return const SizedBox();
+              }
+            },
+          );
   }
 
   Widget _buildAlbumCard(String albumName) {
@@ -1027,7 +1232,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
 
   Widget _buildPhotoCard(PhotoData photo) {
     print('🎨 Building photo card for: ${photo.title}');
-    print('🔗 Photo URL: ${photo.firebaseUrl}');
+    print('�� Photo URL: ${photo.firebaseUrl}');
     print('🆔 Photo ID: ${photo.id}');
     
     return GestureDetector(

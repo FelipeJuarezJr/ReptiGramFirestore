@@ -5,6 +5,7 @@ import 'chat_screen.dart';
 import '../services/firestore_service.dart';
 import '../services/chat_service.dart';
 import '../styles/colors.dart';
+import '../utils/responsive_utils.dart';
 import 'dart:async';
 
 class UserListScreen extends StatefulWidget {
@@ -583,20 +584,63 @@ class _UserListScreenState extends State<UserListScreen> {
                             _searchController.text,
                             userData.hasUnreadMessages,
                           ),
-                          subtitle: Text(
-                            userData.lastMessage.isNotEmpty ? userData.lastMessage : 'No messages yet',
-                            style: TextStyle(
-                              color: userData.hasUnreadMessages ? Colors.black : Colors.grey,
-                              fontWeight: userData.hasUnreadMessages ? FontWeight.w500 : FontWeight.normal,
-                            ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                userData.lastMessage.isNotEmpty ? userData.lastMessage : 'No messages yet',
+                                style: TextStyle(
+                                  color: userData.hasUnreadMessages ? Colors.black : Colors.grey,
+                                  fontWeight: userData.hasUnreadMessages ? FontWeight.w500 : FontWeight.normal,
+                                ),
+                              ),
+                              if (userData.lastMessageTimestamp > 0)
+                                Text(
+                                  _formatTimestamp(userData.lastMessageTimestamp),
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 12,
+                                  ),
+                                ),
+                            ],
                           ),
+                          trailing: userData.hasUnreadMessages
+                              ? Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue,
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: const Icon(
+                                    Icons.chat,
+                                    color: Colors.white,
+                                    size: 16,
+                                  ),
+                                )
+                              : null,
                           onTap: () {
                             _openChat(userData.uid, userData.name);
                           },
-                        );
-                      },
-                    ),
-    );
+                        ),
+                      );
+                    },
+                  );
+  }
+
+  String _formatTimestamp(int timestamp) {
+    final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
+    final now = DateTime.now();
+    final difference = now.difference(date);
+
+    if (difference.inDays > 0) {
+      return '${difference.inDays}d ago';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours}h ago';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes}m ago';
+    } else {
+      return 'Just now';
+    }
   }
 
   Future<ChatUserData?> _getUserChatData(QueryDocumentSnapshot userDoc, String currentUserId) async {
