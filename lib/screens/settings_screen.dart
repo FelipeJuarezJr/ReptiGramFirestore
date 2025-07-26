@@ -5,6 +5,7 @@ import '../state/dark_mode_provider.dart';
 import '../state/app_state.dart';
 import '../services/firestore_service.dart';
 import '../utils/validation_utils.dart';
+import '../utils/responsive_utils.dart';
 import '../styles/colors.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -29,102 +30,461 @@ class _SettingsScreenState extends State<SettingsScreen> {
           gradient: AppColors.mainGradient,
         ),
         child: SafeArea(
-          child: Column(
-            children: [
-              // Header
-              Container(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back, color: AppColors.titleText),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                    const Text(
-                      'Settings',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.titleText,
-                      ),
-                    ),
-                  ],
+          child: ResponsiveUtils.isWideScreen(context) 
+              ? _buildDesktopLayout(context, user, isGoogleUser, darkModeProvider)
+              : _buildMobileLayout(context, user, isGoogleUser, darkModeProvider),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopLayout(BuildContext context, User? user, bool isGoogleUser, DarkModeProvider darkModeProvider) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 1400),
+      margin: const EdgeInsets.symmetric(horizontal: 24.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Left side - Settings info and user details
+          Expanded(
+            flex: 1,
+            child: Container(
+              margin: const EdgeInsets.only(top: 24.0, right: 16.0),
+              child: Card(
+                elevation: 8,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
                 ),
-              ),
-
-              // Settings List
-              Expanded(
                 child: Container(
-                  margin: const EdgeInsets.all(16.0),
                   decoration: BoxDecoration(
-                    gradient: AppColors.inputGradient,
-                    borderRadius: AppColors.pillShape,
-                  ),
-                  child: ListView(
-                    padding: const EdgeInsets.all(16.0),
-                    children: [
-                      // User Info Section
-                      if (user != null) ...[
-                        _buildSectionHeader('Account Information'),
-                        _buildUserInfoTile(user),
-                        const SizedBox(height: 16),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color(0xFFFFF8E1), // Light cream
+                        Color(0xFFFFE0B2), // Light orange
+                        Color(0xFFFFCC80), // Medium orange
                       ],
-
-                      // Account Management Section
-                      if (user != null) ...[
-                        _buildSectionHeader('Account Management'),
-                        _buildSettingTile(
-                          'Change Username',
-                          Icons.person,
-                          onTap: () => _showChangeUsernameDialog(),
-                        ),
-                        if (!isGoogleUser) ...[
-                          _buildPasswordTile('Change Password', Icons.lock, () => _showChangePasswordDialog()),
-                          _buildPasswordTile('Reset Password', Icons.lock_reset, () => _showResetPasswordDialog()),
-                        ],
-                        const SizedBox(height: 16),
-                      ],
-
-                      // App Settings Section
-                      _buildSectionHeader('App Settings'),
-                      _buildSettingTile(
-                        'Dark Mode',
-                        Icons.dark_mode,
-                        trailing: Switch(
-                          value: darkModeProvider.isDarkMode,
-                          onChanged: darkModeProvider.toggleDarkMode,
-                          activeColor: Colors.brown,
-                        ),
+                      stops: [0.0, 0.5, 1.0],
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
                       ),
-                      _buildSettingTile(
-                        'Language',
-                        Icons.language,
-                        onTap: () {
-                          // TODO: Implement language selection
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Language selection coming soon!')),
-                          );
-                        },
-                      ),
-
-                      // Account Actions Section
-                      if (user != null) ...[
-                        const SizedBox(height: 16),
-                        _buildSectionHeader('Account Actions'),
-                        _buildSettingTile(
-                          'Sign Out',
-                          Icons.logout,
-                          onTap: _signOut,
-                          textColor: Colors.red,
-                        ),
-                      ],
                     ],
                   ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.arrow_back, color: AppColors.titleText),
+                              onPressed: () => Navigator.pop(context),
+                            ),
+                            const Text(
+                              'Settings',
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.titleText,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        if (user != null) _buildDesktopUserInfo(user),
+                        const SizedBox(height: 20),
+                        _buildSettingsStats(),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Right side - Settings options
+          Expanded(
+            flex: 2,
+            child: Container(
+              margin: const EdgeInsets.only(top: 24.0),
+              child: Card(
+                elevation: 8,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Column(
+                    children: [
+                      // Settings header
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: AppColors.titleText,
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.settings, color: Colors.white),
+                            const SizedBox(width: 12),
+                            const Text(
+                              'Settings Options',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Settings list
+                      Expanded(
+                        child: _buildSettingsList(user, isGoogleUser, darkModeProvider),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileLayout(BuildContext context, User? user, bool isGoogleUser, DarkModeProvider darkModeProvider) {
+    return Column(
+      children: [
+        // Header
+        Container(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back, color: AppColors.titleText),
+                onPressed: () => Navigator.pop(context),
+              ),
+              const Text(
+                'Settings',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.titleText,
                 ),
               ),
             ],
           ),
         ),
+
+        // Settings List
+        Expanded(
+          child: Container(
+            margin: const EdgeInsets.all(16.0),
+            decoration: BoxDecoration(
+              gradient: AppColors.inputGradient,
+              borderRadius: AppColors.pillShape,
+            ),
+            child: _buildSettingsList(user, isGoogleUser, darkModeProvider),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDesktopUserInfo(User user) {
+    final appState = Provider.of<AppState>(context);
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Account Information',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppColors.titleText,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            CircleAvatar(
+              radius: 40,
+              backgroundImage: user.photoURL != null ? NetworkImage(user.photoURL!) : null,
+              child: user.photoURL == null ? const Icon(Icons.person, size: 40) : null,
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    user.displayName ?? 'User',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.titleText,
+                    ),
+                  ),
+                  Text(
+                    user.email ?? 'No email',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: AppColors.titleText,
+                    ),
+                  ),
+                  FutureBuilder<String?>(
+                    future: appState.fetchUsername(user.uid),
+                    builder: (context, snapshot) {
+                      if (snapshot.hasData && snapshot.data != null && snapshot.data != 'Unknown User') {
+                        return Text(
+                          'Username: ${snapshot.data}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    },
+                  ),
+                  Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      'Provider: ${user.providerData.first.providerId}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.green,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSettingsStats() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Settings Overview',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: AppColors.titleText,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildStatItem('Account Settings', 'Manage your profile', Icons.person),
+        const SizedBox(height: 8),
+        _buildStatItem('App Settings', 'Customize your experience', Icons.settings),
+        const SizedBox(height: 8),
+        _buildStatItem('Security', 'Password and privacy', Icons.security),
+      ],
+    );
+  }
+
+  Widget _buildStatItem(String title, String subtitle, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: AppColors.titleText, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.titleText,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.titleText,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingsList(User? user, bool isGoogleUser, DarkModeProvider darkModeProvider) {
+    return ListView(
+      padding: const EdgeInsets.all(16.0),
+      children: [
+        // User Info Section
+        if (user != null && !ResponsiveUtils.isWideScreen(context)) ...[
+          _buildSectionHeader('Account Information'),
+          _buildUserInfoTile(user),
+          const SizedBox(height: 16),
+        ],
+
+        // Account Management Section
+        if (user != null) ...[
+          _buildSectionHeader('Account Management'),
+          ResponsiveUtils.isWideScreen(context)
+              ? _buildDesktopSettingTile(
+                  'Change Username',
+                  Icons.person,
+                  'Update your display name',
+                  onTap: () => _showChangeUsernameDialog(),
+                )
+              : _buildSettingTile(
+                  'Change Username',
+                  Icons.person,
+                  onTap: () => _showChangeUsernameDialog(),
+                ),
+          if (!isGoogleUser) ...[
+            ResponsiveUtils.isWideScreen(context)
+                ? _buildDesktopSettingTile(
+                    'Change Password',
+                    Icons.lock,
+                    'Update your password',
+                    onTap: () => _showChangePasswordDialog(),
+                  )
+                : _buildPasswordTile('Change Password', Icons.lock, () => _showChangePasswordDialog()),
+            ResponsiveUtils.isWideScreen(context)
+                ? _buildDesktopSettingTile(
+                    'Reset Password',
+                    Icons.lock_reset,
+                    'Send reset email',
+                    onTap: () => _showResetPasswordDialog(),
+                  )
+                : _buildPasswordTile('Reset Password', Icons.lock_reset, () => _showResetPasswordDialog()),
+          ],
+          const SizedBox(height: 16),
+        ],
+
+        // App Settings Section
+        _buildSectionHeader('App Settings'),
+        ResponsiveUtils.isWideScreen(context)
+            ? _buildDesktopSettingTile(
+                'Dark Mode',
+                Icons.dark_mode,
+                'Toggle dark theme',
+                trailing: Switch(
+                  value: darkModeProvider.isDarkMode,
+                  onChanged: darkModeProvider.toggleDarkMode,
+                  activeColor: Colors.brown,
+                ),
+              )
+            : _buildSettingTile(
+                'Dark Mode',
+                Icons.dark_mode,
+                trailing: Switch(
+                  value: darkModeProvider.isDarkMode,
+                  onChanged: darkModeProvider.toggleDarkMode,
+                  activeColor: Colors.brown,
+                ),
+              ),
+        ResponsiveUtils.isWideScreen(context)
+            ? _buildDesktopSettingTile(
+                'Language',
+                Icons.language,
+                'Select your language',
+                onTap: () {
+                  // TODO: Implement language selection
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Language selection coming soon!')),
+                  );
+                },
+              )
+            : _buildSettingTile(
+                'Language',
+                Icons.language,
+                onTap: () {
+                  // TODO: Implement language selection
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Language selection coming soon!')),
+                  );
+                },
+              ),
+
+        // Account Actions Section
+        if (user != null) ...[
+          const SizedBox(height: 16),
+          _buildSectionHeader('Account Actions'),
+          ResponsiveUtils.isWideScreen(context)
+              ? _buildDesktopSettingTile(
+                  'Sign Out',
+                  Icons.logout,
+                  'Sign out of your account',
+                  onTap: _signOut,
+                  textColor: Colors.red,
+                )
+              : _buildSettingTile(
+                  'Sign Out',
+                  Icons.logout,
+                  onTap: _signOut,
+                  textColor: Colors.red,
+                ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildDesktopSettingTile(String title, IconData icon, String subtitle, {Widget? trailing, VoidCallback? onTap, Color? textColor}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.grey.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.all(16),
+        leading: Icon(icon, color: textColor ?? Colors.brown, size: 24),
+        title: Text(
+          title,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: textColor ?? Colors.brown,
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+          ),
+        ),
+        trailing: trailing ?? (onTap != null ? const Icon(Icons.arrow_forward_ios, color: Colors.brown, size: 16) : null),
+        onTap: onTap,
       ),
     );
   }

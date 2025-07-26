@@ -5,6 +5,7 @@ import 'chat_screen.dart';
 import '../services/firestore_service.dart';
 import '../services/chat_service.dart';
 import '../styles/colors.dart';
+import '../utils/responsive_utils.dart';
 import 'dart:async';
 
 class UserListScreen extends StatefulWidget {
@@ -134,18 +135,282 @@ class _UserListScreenState extends State<UserListScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _users.isEmpty
-              ? const Center(child: Text('No other users found.'))
-              : _sortedUsers.isEmpty
-                  ? const Center(child: CircularProgressIndicator())
-                  : ListView.builder(
-                      itemCount: _sortedUsers.length,
-                      itemBuilder: (context, index) {
-                        final userData = _sortedUsers[index];
-                        
-                        return ListTile(
+      body: ResponsiveUtils.isWideScreen(context) 
+          ? _buildDesktopLayout(context)
+          : _buildMobileLayout(context),
+    );
+  }
+
+  Widget _buildDesktopLayout(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 1400),
+      margin: const EdgeInsets.symmetric(horizontal: 24.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Left side - Chat info and stats
+          Expanded(
+            flex: 1,
+            child: Container(
+              margin: const EdgeInsets.only(top: 24.0, right: 16.0),
+              child: Card(
+                elevation: 8,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color(0xFFFFF8E1), // Light cream
+                        Color(0xFFFFE0B2), // Light orange
+                        Color(0xFFFFCC80), // Medium orange
+                      ],
+                      stops: [0.0, 0.5, 1.0],
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Messenger',
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.titleText,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Start conversations with other users',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: AppColors.titleText.withOpacity(0.7),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        _buildMessengerStats(),
+                        const SizedBox(height: 20),
+                        _buildMessengerActions(),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Right side - Users list
+          Expanded(
+            flex: 2,
+            child: Container(
+              margin: const EdgeInsets.only(top: 24.0),
+              child: Card(
+                elevation: 8,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Column(
+                    children: [
+                      // Users header
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: AppColors.titleText,
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.people, color: Colors.white),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Available Users',
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              '${_sortedUsers.length} users',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Users list
+                      Expanded(
+                        child: _buildUsersList(),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileLayout(BuildContext context) {
+    return _isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : _users.isEmpty
+            ? const Center(child: Text('No other users found.'))
+            : _sortedUsers.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : _buildUsersList();
+  }
+
+  Widget _buildMessengerStats() {
+    final totalUsers = _sortedUsers.length;
+    final unreadCount = _sortedUsers.where((user) => user.hasUnreadMessages).length;
+    final activeChats = _sortedUsers.where((user) => user.lastMessage.isNotEmpty).length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Statistics',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: AppColors.titleText,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildStatItem('Total Users', totalUsers.toString(), Icons.people),
+        const SizedBox(height: 8),
+        _buildStatItem('Unread Chats', unreadCount.toString(), Icons.mark_email_unread),
+        const SizedBox(height: 8),
+        _buildStatItem('Active Chats', activeChats.toString(), Icons.chat),
+      ],
+    );
+  }
+
+  Widget _buildStatItem(String label, String value, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: AppColors.titleText, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.titleText,
+                  ),
+                ),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.titleText,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMessengerActions() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Actions',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: AppColors.titleText,
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () async {
+              setState(() {
+                _isLoading = true;
+              });
+              await _loadUsers();
+            },
+            icon: const Icon(Icons.refresh),
+            label: const Text('Refresh List'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.titleText,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildUsersList() {
+    return _isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : _users.isEmpty
+            ? const Center(child: Text('No other users found.'))
+            : _sortedUsers.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _sortedUsers.length,
+                    itemBuilder: (context, index) {
+                      final userData = _sortedUsers[index];
+                      
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          color: userData.hasUnreadMessages 
+                              ? Colors.blue.withOpacity(0.1)
+                              : Colors.grey.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(12),
+                          border: userData.hasUnreadMessages
+                              ? Border.all(color: Colors.blue.withOpacity(0.3))
+                              : null,
+                        ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.all(12),
                           leading: Stack(
                             children: [
                               _buildAvatar(userData.avatarUrl, userData.name),
@@ -180,22 +445,66 @@ class _UserListScreenState extends State<UserListScreen> {
                             userData.name,
                             style: TextStyle(
                               fontWeight: userData.hasUnreadMessages ? FontWeight.bold : FontWeight.normal,
+                              fontSize: 16,
                             ),
                           ),
-                          subtitle: Text(
-                            userData.lastMessage.isNotEmpty ? userData.lastMessage : 'No messages yet',
-                            style: TextStyle(
-                              color: userData.hasUnreadMessages ? Colors.black : Colors.grey,
-                              fontWeight: userData.hasUnreadMessages ? FontWeight.w500 : FontWeight.normal,
-                            ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                userData.lastMessage.isNotEmpty ? userData.lastMessage : 'No messages yet',
+                                style: TextStyle(
+                                  color: userData.hasUnreadMessages ? Colors.black : Colors.grey,
+                                  fontWeight: userData.hasUnreadMessages ? FontWeight.w500 : FontWeight.normal,
+                                ),
+                              ),
+                              if (userData.lastMessageTimestamp > 0)
+                                Text(
+                                  _formatTimestamp(userData.lastMessageTimestamp),
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 12,
+                                  ),
+                                ),
+                            ],
                           ),
+                          trailing: userData.hasUnreadMessages
+                              ? Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue,
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: const Icon(
+                                    Icons.chat,
+                                    color: Colors.white,
+                                    size: 16,
+                                  ),
+                                )
+                              : null,
                           onTap: () {
                             _openChat(userData.uid, userData.name);
                           },
-                        );
-                      },
-                    ),
-    );
+                        ),
+                      );
+                    },
+                  );
+  }
+
+  String _formatTimestamp(int timestamp) {
+    final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
+    final now = DateTime.now();
+    final difference = now.difference(date);
+
+    if (difference.inDays > 0) {
+      return '${difference.inDays}d ago';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours}h ago';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes}m ago';
+    } else {
+      return 'Just now';
+    }
   }
 
   Future<ChatUserData?> _getUserChatData(QueryDocumentSnapshot userDoc, String currentUserId) async {

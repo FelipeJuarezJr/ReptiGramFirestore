@@ -4,6 +4,7 @@ import '../styles/colors.dart';
 import '../screens/login_screen.dart';
 import '../widgets/nav_drawer.dart';
 import '../state/app_state.dart';
+import '../utils/responsive_utils.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class TitleHeader extends StatelessWidget {
@@ -46,12 +47,15 @@ class TitleHeader extends StatelessWidget {
                         alignment: Alignment.centerLeft,
                         backgroundColor: Colors.transparent,
                         elevation: 0,
-                        child: SizedBox(
-                          width: MediaQuery.of(context).size.width * 0.7,
-                          child: NavDrawer(
-                            userEmail: user?.email,
-                            userName: user?.displayName ?? 'User', // Fallback, NavDrawer will use AppState
-                            userPhotoUrl: user?.photoURL,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: ResponsiveUtils.isWideScreen(context) ? 560 : 280),
+                          child: Container(
+                            width: ResponsiveUtils.isWideScreen(context) ? 560 : 280,
+                            child: NavDrawer(
+                              userEmail: user?.email,
+                              userName: user?.displayName ?? 'User', // Fallback, NavDrawer will use AppState
+                              userPhotoUrl: user?.photoURL,
+                            ),
                           ),
                         ),
                       ),

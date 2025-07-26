@@ -15,6 +15,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
 import 'dart:io';
 import 'dart:typed_data';
+import '../utils/responsive_utils.dart';
 
 class PostScreen extends StatefulWidget {
   final bool shouldLoadPosts;
@@ -821,260 +822,420 @@ class _PostScreenState extends State<PostScreen> {
           gradient: AppColors.mainGradient,
         ),
         child: SafeArea(
-          child: Column(
-            children: [
-              const TitleHeader(),
-              const Header(initialIndex: 0),
-              
-              // Fixed Post Creation Form
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    children: [
-                      Container(
-                        width: postWidth,
-                        decoration: BoxDecoration(
-                          gradient: AppColors.inputGradient,
-                          borderRadius: AppColors.pillShape,
-                        ),
-                        child: TextFormField(
-                          controller: _descriptionController,
-                          maxLines: 5,
-                          decoration: InputDecoration(
-                            hintText: 'What\'s happening in the ReptiWorld?',
-                            hintStyle: TextStyle(
-                              color: Colors.grey[600],
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: AppColors.pillShape,
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: AppColors.pillShape,
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: AppColors.pillShape,
-                            ),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter a Post';
-                            }
-                            return null;
-                          },
-                        ),
+          child: ResponsiveUtils.isWideScreen(context) 
+              ? _buildDesktopLayout(context, appState)
+              : _buildMobileLayout(context, appState, postWidth),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopLayout(BuildContext context, AppState appState) {
+    return Column(
+      children: [
+        const TitleHeader(),
+        const Header(initialIndex: 0),
+        Expanded(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 1400),
+            margin: const EdgeInsets.symmetric(horizontal: 24.0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Left side - Post creation form
+                Expanded(
+                  flex: 1,
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 24.0, right: 16.0),
+                    child: Card(
+                      elevation: 8,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
                       ),
-                      const SizedBox(height: 16),
-                      _isLoading
-                          ? const CircularProgressIndicator()
-                          : SizedBox(
-                              width: MediaQuery.of(context).size.width * 0.5,
-                              child: ElevatedButton(
-                                onPressed: _createPost,
-                                style: AppColors.pillButtonStyle,
-                                child: Ink(
-                                  decoration: BoxDecoration(
-                                    gradient: AppColors.loginGradient,
-                                    borderRadius: AppColors.pillShape,
-                                  ),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(vertical: 16),
-                                    alignment: Alignment.center,
-                                    child: const Text(
-                                      'Create Post',
-                                      style: TextStyle(
-                                        color: AppColors.buttonText,
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFFFFF8E1), // Light cream
+                              Color(0xFFFFE0B2), // Light orange
+                              Color(0xFFFFCC80), // Medium orange
+                            ],
+                            stops: [0.0, 0.5, 1.0],
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(24.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Create Post',
+                                style: TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.titleText,
                                 ),
                               ),
-                            ),
-                    ],
+                              const SizedBox(height: 16),
+                              _buildPostCreationForm(context),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
+                // Right side - Posts feed
+                Expanded(
+                  flex: 2,
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 24.0),
+                    child: _buildPostsFeed(context, appState, null),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
-              // Scrollable Posts List
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(16.0),
-                  itemCount: _posts.length,
-                  itemBuilder: (context, index) {
-                    final post = _posts[index];
-                    return Container(
-                      width: postWidth,
-                      margin: const EdgeInsets.only(bottom: 16),
-                      decoration: BoxDecoration(
-                        gradient: AppColors.inputGradient,
+  Widget _buildMobileLayout(BuildContext context, AppState appState, double postWidth) {
+    return Column(
+      children: [
+        const TitleHeader(),
+        const Header(initialIndex: 0),
+        
+        // Fixed Post Creation Form
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              children: [
+                Container(
+                  width: postWidth,
+                  decoration: BoxDecoration(
+                    gradient: AppColors.inputGradient,
+                    borderRadius: AppColors.pillShape,
+                  ),
+                  child: TextFormField(
+                    controller: _descriptionController,
+                    maxLines: 5,
+                    decoration: InputDecoration(
+                      hintText: 'What\'s happening in the ReptiWorld?',
+                      hintStyle: TextStyle(
+                        color: Colors.grey[600],
+                      ),
+                      border: OutlineInputBorder(
                         borderRadius: AppColors.pillShape,
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                _buildUserAvatar(post.userId),
-                                const SizedBox(width: 8),
-                                FutureBuilder<String?>(
-                                  future: appState.fetchUsername(post.userId),
-                                  builder: (context, snapshot) {
-                                    return Text(
-                                      snapshot.data ?? 'Loading...',
-                                      style: const TextStyle(
-                                        color: Colors.brown,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ],
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: AppColors.pillShape,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: AppColors.pillShape,
+                      ),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter a Post';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _isLoading
+                    ? const CircularProgressIndicator()
+                    : SizedBox(
+                        width: MediaQuery.of(context).size.width * 0.5,
+                        child: ElevatedButton(
+                          onPressed: _createPost,
+                          style: AppColors.pillButtonStyle,
+                          child: Ink(
+                            decoration: BoxDecoration(
+                              gradient: AppColors.loginGradient,
+                              borderRadius: AppColors.pillShape,
                             ),
-                            const SizedBox(height: 8),
-                            Text(
-                              post.content,
-                              style: const TextStyle(
-                                color: Colors.brown,
-                                fontSize: 16,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              alignment: Alignment.center,
+                              child: const Text(
+                                'Create Post',
+                                style: TextStyle(
+                                  color: AppColors.buttonText,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                IconButton(
-                                  icon: Icon(
-                                    post.isLiked ? Icons.favorite : Icons.favorite_border,
-                                    color: post.isLiked ? Colors.red : Colors.brown[400],
-                                  ),
-                                  onPressed: () => _toggleLike(post),
-                                ),
-                                Text(
-                                  '${post.likeCount} likes',
-                                  style: TextStyle(
-                                    color: Colors.brown[400],
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                IconButton(
-                                  icon: Icon(
-                                    Icons.comment_outlined,
-                                    color: Colors.brown[400],
-                                  ),
-                                  onPressed: () => _showCommentDialog(post),
-                                ),
-                                Text(
-                                  '${post.comments.length} comments',
-                                  style: TextStyle(
-                                    color: Colors.brown[400],
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                const Spacer(),
-                                Text(
-                                  _formatTimestamp(post.timestamp),
-                                  style: TextStyle(
-                                    color: Colors.brown[400],
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            // Show latest comment if exists
-                            if (post.comments.isNotEmpty) ...[
-                              const SizedBox(height: 8),
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: Colors.brown.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _buildUserAvatar(post.comments.last.userId),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          FutureBuilder<String?>(
-                                            future: appState.fetchUsername(post.comments.last.userId),
-                                            builder: (context, snapshot) {
-                                              return Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    'Latest: ${snapshot.data ?? 'Loading...'}: ${post.comments.last.content}',
-                                                    style: const TextStyle(
-                                                      color: Colors.brown,
-                                                      fontSize: 14,
-                                                    ),
-                                                  ),
-                                                  // Show image if latest comment has one
-                                                  if (post.comments.last.imageUrl != null) ...[
-                                                    const SizedBox(height: 8),
-                                                    Container(
-                                                      height: 80,
-                                                      width: 80,
-                                                      decoration: BoxDecoration(
-                                                        border: Border.all(color: Colors.grey[300]!),
-                                                        borderRadius: BorderRadius.circular(8),
-                                                      ),
-                                                      child: ClipRRect(
-                                                        borderRadius: BorderRadius.circular(8),
-                                                        child: Image.network(
-                                                          post.comments.last.imageUrl!,
-                                                          fit: BoxFit.cover,
-                                                          errorBuilder: (context, error, stackTrace) {
-                                                            return Container(
-                                                              color: Colors.grey[200],
-                                                              child: const Icon(
-                                                                Icons.error,
-                                                                color: Colors.grey,
-                                                              ),
-                                                            );
-                                                          },
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ],
-                                              );
-                                            },
+                          ),
+                        ),
+                      ),
+              ],
+            ),
+          ),
+        ),
+
+        // Scrollable Posts List
+        Expanded(
+          child: _buildPostsFeed(context, appState, postWidth),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPostCreationForm(BuildContext context) {
+    return Form(
+      key: _formKey,
+      child: Column(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              gradient: AppColors.inputGradient,
+              borderRadius: AppColors.pillShape,
+            ),
+            child: TextFormField(
+              controller: _descriptionController,
+              maxLines: 4,
+              decoration: InputDecoration(
+                hintText: 'What\'s happening in the ReptiWorld?',
+                hintStyle: TextStyle(
+                  color: Colors.grey[600],
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: AppColors.pillShape,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: AppColors.pillShape,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: AppColors.pillShape,
+                ),
+              ),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter a Post';
+                }
+                return null;
+              },
+            ),
+          ),
+          const SizedBox(height: 16),
+          _isLoading
+              ? const CircularProgressIndicator()
+              : SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _createPost,
+                    style: AppColors.pillButtonStyle,
+                    child: Ink(
+                      decoration: BoxDecoration(
+                        gradient: AppColors.loginGradient,
+                        borderRadius: AppColors.pillShape,
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        alignment: Alignment.center,
+                        child: const Text(
+                          'Create Post',
+                          style: TextStyle(
+                            color: AppColors.buttonText,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPostsFeed(BuildContext context, AppState appState, double? postWidth) {
+    return ListView.builder(
+      padding: const EdgeInsets.all(16.0),
+      itemCount: _posts.length,
+      itemBuilder: (context, index) {
+        final post = _posts[index];
+        return Container(
+          width: postWidth,
+          margin: const EdgeInsets.only(bottom: 16),
+          decoration: BoxDecoration(
+            gradient: AppColors.inputGradient,
+            borderRadius: AppColors.pillShape,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    _buildUserAvatar(post.userId),
+                    const SizedBox(width: 8),
+                    FutureBuilder<String?>(
+                      future: appState.fetchUsername(post.userId),
+                      builder: (context, snapshot) {
+                        return Text(
+                          snapshot.data ?? 'Loading...',
+                          style: const TextStyle(
+                            color: Colors.brown,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  post.content,
+                  style: const TextStyle(
+                    color: Colors.brown,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(
+                        post.isLiked ? Icons.favorite : Icons.favorite_border,
+                        color: post.isLiked ? Colors.red : Colors.brown[400],
+                      ),
+                      onPressed: () => _toggleLike(post),
+                    ),
+                    Text(
+                      '${post.likeCount} likes',
+                      style: TextStyle(
+                        color: Colors.brown[400],
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    IconButton(
+                      icon: Icon(
+                        Icons.comment_outlined,
+                        color: Colors.brown[400],
+                      ),
+                      onPressed: () => _showCommentDialog(post),
+                    ),
+                    Text(
+                      '${post.comments.length} comments',
+                      style: TextStyle(
+                        color: Colors.brown[400],
+                        fontSize: 14,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      _formatTimestamp(post.timestamp),
+                      style: TextStyle(
+                        color: Colors.brown[400],
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+                // Show latest comment if exists
+                if (post.comments.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.brown.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildUserAvatar(post.comments.last.userId),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              FutureBuilder<String?>(
+                                future: appState.fetchUsername(post.comments.last.userId),
+                                builder: (context, snapshot) {
+                                  return Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Latest: ${snapshot.data ?? 'Loading...'}: ${post.comments.last.content}',
+                                        style: const TextStyle(
+                                          color: Colors.brown,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      // Show image if latest comment has one
+                                      if (post.comments.last.imageUrl != null) ...[
+                                        const SizedBox(height: 8),
+                                        Container(
+                                          height: 80,
+                                          width: 80,
+                                          decoration: BoxDecoration(
+                                            border: Border.all(color: Colors.grey[300]!),
+                                            borderRadius: BorderRadius.circular(8),
                                           ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            _formatTimestamp(post.comments.last.timestamp),
-                                            style: TextStyle(
-                                              color: Colors.brown[400],
-                                              fontSize: 12,
+                                          child: ClipRRect(
+                                            borderRadius: BorderRadius.circular(8),
+                                            child: Image.network(
+                                              post.comments.last.imageUrl!,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (context, error, stackTrace) {
+                                                return Container(
+                                                  color: Colors.grey[200],
+                                                  child: const Icon(
+                                                    Icons.error,
+                                                    color: Colors.grey,
+                                                  ),
+                                                );
+                                              },
                                             ),
                                           ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
+                                        ),
+                                      ],
+                                    ],
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _formatTimestamp(post.comments.last.timestamp),
+                                style: TextStyle(
+                                  color: Colors.brown[400],
+                                  fontSize: 12,
                                 ),
                               ),
                             ],
-                          ],
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
