@@ -40,10 +40,11 @@ Future<void> main() async {
       Firebase.app();
       print('✅ Firebase already initialized in HTML');
     } catch (e) {
-      print('⚠️ Firebase not found, initializing in Dart...');
+      // Silently initialize Firebase as fallback
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
+      print('✅ Firebase initialized in Dart (fallback)');
     }
   }
 
