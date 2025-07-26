@@ -95,11 +95,31 @@ class _MyAppState extends State<MyApp> {
         print('✅ Notification permission granted');
       } else {
         print('❌ Notification permission denied: ${permission.authorizationStatus}');
-        return;
+        // For web, try to get token even if permission is denied initially
+        if (kIsWeb) {
+          print('🌐 Web platform: Attempting to get FCM token anyway...');
+        } else {
+          return;
+        }
       }
 
       // Get and save FCM token
-      final token = await messaging.getToken();
+      String? token;
+      if (kIsWeb) {
+        // For web, try to get token from window object first (set by HTML)
+        try {
+          // Use js interop to get token from window object
+          token = await _getWebFcmToken();
+        } catch (e) {
+          print('❌ Error getting web FCM token: $e');
+        }
+      }
+      
+      // Fallback to regular token generation
+      if (token == null) {
+        token = await messaging.getToken();
+      }
+      
       if (token != null) {
         print('🔑 FCM Token generated: ${token.substring(0, 20)}...');
         
@@ -107,7 +127,7 @@ class _MyAppState extends State<MyApp> {
         FirebaseAuth.instance.authStateChanges().listen((User? user) async {
           if (user != null) {
             try {
-              await FirestoreService.saveFcmToken(user.uid, token);
+              await FirestoreService.saveFcmToken(user.uid, token!);
               print('✅ FCM Token saved to Firestore for user: ${user.uid}');
             } catch (e) {
               print('❌ Error saving FCM token: $e');
@@ -276,6 +296,67 @@ class _MyAppState extends State<MyApp> {
         ),
       );
     }
+  }
+
+  // Helper method to get FCM token from web window object or localStorage
+  Future<String?> _getWebFcmToken() async {
+    if (!kIsWeb) return null;
+    
+    try {
+      // Check if running in PWA mode
+      final isPWA = _isPWAMode();
+      print('📱 PWA Mode detected: $isPWA');
+      
+      // Try to get token from localStorage first (for PWA mode)
+      final localStorageToken = _getFcmTokenFromLocalStorage();
+      if (localStorageToken != null) {
+        print('🔑 FCM Token found in localStorage: ${localStorageToken.substring(0, 20)}...');
+        return localStorageToken;
+      }
+      
+      // Try to get token from window object
+      final windowToken = await _getFcmTokenFromWindow();
+      if (windowToken != null) {
+        print('🔑 FCM Token found in window object: ${windowToken.substring(0, 20)}...');
+        return windowToken;
+      }
+      
+      print('❌ No FCM token found in localStorage or window object');
+      return null;
+    } catch (e) {
+      print('❌ Error getting FCM token from web: $e');
+      return null;
+    }
+  }
+
+  // Check if running in PWA mode
+  bool _isPWAMode() {
+    try {
+      // This is a simplified check - in a real implementation, you'd use js interop
+      // For now, we'll assume PWA mode if we're on web
+      return kIsWeb;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Get FCM token from localStorage
+  String? _getFcmTokenFromLocalStorage() {
+    try {
+      // This is a placeholder - in a real implementation, you'd use js interop
+      // For now, we'll return null and let the regular token generation handle it
+      return null;
+    } catch (e) {
+      print('❌ Error getting FCM token from localStorage: $e');
+      return null;
+    }
+  }
+
+  // JS interop method to get FCM token from window object
+  Future<String?> _getFcmTokenFromWindow() async {
+    // This is a placeholder - in a real implementation, you'd use js interop
+    // For now, we'll return null and let the regular token generation handle it
+    return null;
   }
 
   void _setupAuthStateListener() {

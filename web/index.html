@@ -54,6 +54,193 @@
     // Initialize Firebase manually to ensure it's available before Flutter loads
     firebase.initializeApp(firebaseConfig);
     console.log('✅ Firebase initialized in HTML');
+
+    // Check if running in PWA mode
+    const isPWA = window.matchMedia('(display-mode: standalone)').matches || 
+                  window.navigator.standalone === true;
+    console.log('📱 PWA Mode:', isPWA);
+    
+    // Check if running on mobile
+    const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    console.log('📱 Mobile device:', isMobile);
+
+    // Initialize Firebase Messaging for web
+    const messaging = firebase.messaging();
+
+    // Request notification permission immediately
+    async function requestNotificationPermission() {
+      try {
+        console.log('🔔 Requesting notification permission...');
+        const permission = await Notification.requestPermission();
+        console.log('🔔 Notification permission status:', permission);
+        
+        if (permission === 'granted') {
+          console.log('✅ Notification permission granted');
+          // Get FCM token after permission is granted
+          const token = await messaging.getToken();
+          if (token) {
+            console.log('🔑 FCM Token generated:', token.substring(0, 20) + '...');
+            // Store token for Flutter to use
+            window.fcmToken = token;
+            
+            // Also store in localStorage for PWA mode
+            localStorage.setItem('fcmToken', token);
+            console.log('💾 FCM Token stored in localStorage');
+          }
+        } else {
+          console.log('❌ Notification permission denied:', permission);
+          // For PWA mode, try to get token anyway
+          if (isPWA) {
+            console.log('📱 PWA mode: Attempting to get FCM token despite permission denial...');
+            try {
+              const token = await messaging.getToken();
+              if (token) {
+                console.log('🔑 FCM Token generated for PWA:', token.substring(0, 20) + '...');
+                window.fcmToken = token;
+                localStorage.setItem('fcmToken', token);
+              }
+            } catch (e) {
+              console.log('❌ Could not get FCM token for PWA:', e);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error requesting notification permission:', error);
+      }
+    }
+
+    // Register service worker for notifications
+    async function registerServiceWorker() {
+      try {
+        if ('serviceWorker' in navigator) {
+          console.log('🔧 Registering service worker...');
+          
+          // For PWA mode and mobile, ensure service worker is registered with proper scope
+          const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
+            scope: '/',
+            updateViaCache: 'none'
+          });
+          
+          console.log('✅ Service worker registered:', registration);
+          
+          // Wait for service worker to be ready
+          await navigator.serviceWorker.ready;
+          console.log('✅ Service worker is ready');
+          
+          // Request notification permission after service worker is registered
+          await requestNotificationPermission();
+          
+          // Set up messaging for PWA mode and mobile
+          if (isPWA || isMobile) {
+            console.log('📱 Setting up PWA/mobile-specific messaging...');
+            messaging.onMessage((payload) => {
+              console.log('📨 PWA/mobile foreground message received:', payload);
+              // Show notification even in foreground for PWA/mobile
+              if (payload.notification) {
+                const notificationOptions = {
+                  body: payload.notification.body,
+                  icon: '/favicon.png',
+                  badge: '/favicon.png',
+                  tag: 'chat-message',
+                  requireInteraction: true,
+                  silent: false,
+                  vibrate: isMobile ? [200, 100, 200, 100, 200] : [200, 100, 200]
+                };
+                
+                new Notification(payload.notification.title, notificationOptions);
+                console.log('🔔 Foreground notification shown for PWA/mobile');
+              }
+            });
+          }
+          
+          // For mobile PWA, ensure service worker stays active
+          if (isMobile && isPWA) {
+            console.log('📱 Mobile PWA detected - ensuring service worker stays active...');
+            
+            // Send message to service worker to keep it active
+            if (registration.active) {
+              registration.active.postMessage({
+                type: 'KEEP_ALIVE',
+                timestamp: Date.now()
+              });
+            }
+            
+            // Set up periodic checks to keep service worker active
+            setInterval(() => {
+              if (registration.active) {
+                registration.active.postMessage({
+                  type: 'PING',
+                  timestamp: Date.now()
+                });
+              }
+            }, 30000); // Every 30 seconds
+            
+            // Additional mobile-specific strategies for better background notifications
+            console.log('📱 Setting up mobile background notification strategies...');
+            
+            // Try to request wake lock if supported
+            if ('wakeLock' in navigator) {
+              try {
+                navigator.wakeLock.request('screen').then(lock => {
+                  console.log('🔒 Wake lock acquired for mobile PWA');
+                  // Keep wake lock active for a longer period
+                  setTimeout(() => {
+                    lock.release();
+                    console.log('🔓 Wake lock released');
+                  }, 30000); // 30 seconds
+                }).catch(error => {
+                  console.log('⚠️ Could not acquire wake lock:', error);
+                });
+              } catch (error) {
+                console.log('⚠️ Wake lock not supported:', error);
+              }
+            }
+            
+            // Listen for visibility changes to handle app going to background
+            document.addEventListener('visibilitychange', () => {
+              if (document.hidden) {
+                console.log('📱 App going to background - ensuring notifications work');
+                // Send a message to service worker to prepare for background mode
+                if (registration.active) {
+                  registration.active.postMessage({
+                    type: 'GOING_TO_BACKGROUND',
+                    timestamp: Date.now()
+                  });
+                }
+              } else {
+                console.log('📱 App coming to foreground');
+                // Send a message to service worker that app is active again
+                if (registration.active) {
+                  registration.active.postMessage({
+                    type: 'COMING_TO_FOREGROUND',
+                    timestamp: Date.now()
+                  });
+                }
+              }
+            });
+          }
+        } else {
+          console.log('❌ Service workers not supported');
+        }
+      } catch (error) {
+        console.error('❌ Error registering service worker:', error);
+      }
+    }
+
+    // Initialize messaging when page loads
+    window.addEventListener('load', function() {
+      registerServiceWorker();
+    });
+
+    // Handle PWA installation
+    window.addEventListener('appinstalled', (e) => {
+      console.log('✅ PWA was installed');
+      localStorage.setItem('pwa-installed', 'true');
+      // Re-register service worker after PWA installation
+      setTimeout(() => {
+        registerServiceWorker();
+      }, 1000);
+    });
   </script>
 
   <script>
@@ -234,6 +421,8 @@
     </div>
   </div>
 
+
+
   <script>
     // PWA Install Prompt Logic
     let deferredPrompt;
@@ -242,6 +431,11 @@
     // Check if user has already dismissed the banner
     const hasUserDismissed = localStorage.getItem('pwa-install-dismissed');
     const hasUserInstalled = localStorage.getItem('pwa-installed');
+    
+    // Clear PWA install flags for testing (remove this after testing)
+    localStorage.removeItem('pwa-install-dismissed');
+    localStorage.removeItem('pwa-installed');
+    console.log('🔧 Cleared PWA install flags for testing');
 
     // Listen for the beforeinstallprompt event
     window.addEventListener('beforeinstallprompt', (e) => {
@@ -261,6 +455,14 @@
         }, 3000);
       }
     });
+
+    // Force show install banner for testing (remove this after testing)
+    setTimeout(() => {
+      if (!hasUserDismissed && !hasUserInstalled && !installBannerShown) {
+        console.log('🔧 Forcing PWA install banner to show for testing');
+        showInstallBanner();
+      }
+    }, 5000);
 
     // Listen for successful installation
     window.addEventListener('appinstalled', (e) => {

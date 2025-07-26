@@ -16,13 +16,6 @@ exports.sendChatNotification = functions.firestore
     }
 
     try {
-      // Get chat participants
-      const chatDoc = await admin.firestore().collection('chats').doc(chatId).get();
-      if (!chatDoc.exists) {
-        console.log('Chat document not found');
-        return null;
-      }
-
       // Extract user IDs from chat ID (format: uid1_uid2)
       const userIds = chatId.split('_');
       const senderId = messageData.senderId;
@@ -99,6 +92,44 @@ exports.sendChatNotification = functions.firestore
               badge: 1,
             },
           },
+        },
+        webpush: {
+          notification: {
+            title: notificationTitle,
+            body: notificationBody,
+            icon: '/favicon.png',
+            badge: '/favicon.png',
+            tag: 'chat-message',
+            requireInteraction: true,
+            renotify: true,
+            silent: false,
+            vibrate: [200, 100, 200, 100, 200],
+            data: {
+              senderId: senderId,
+              messageType: messageData.messageType || 'text',
+              chatId: chatId,
+              messageId: context.params.messageId,
+            },
+            actions: [
+              {
+                action: 'open',
+                title: 'Open Chat'
+              }
+            ],
+            // Mobile-specific enhancements
+            dir: 'auto',
+            lang: 'en',
+            image: '/favicon.png'
+          },
+          fcm_options: {
+            link: '/',
+            analytics_label: 'chat_message'
+          },
+          // Enhanced headers for better mobile delivery
+          headers: {
+            'Urgency': 'high',
+            'TTL': '86400' // 24 hours
+          }
         },
       };
 
