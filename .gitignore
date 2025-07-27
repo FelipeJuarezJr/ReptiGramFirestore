@@ -119,4 +119,7 @@ jspm_packages/
 **/ios/Runner/GeneratedPluginRegistrant.*
 
 # Web specific
-**/web/firebase-config.js 
+**/web/firebase-config.js
+
+# Firebase
+.firebase/ 
