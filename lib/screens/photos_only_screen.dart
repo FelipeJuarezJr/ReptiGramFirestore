@@ -512,100 +512,137 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
   }
 
   Widget _buildPhotoCard(PhotoData photo) {
-    return InkWell(
-      onTap: () => _showEnlargedImage(photo),
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: AppColors.inputGradient,
-          borderRadius: BorderRadius.circular(15),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.2),
-              blurRadius: 5,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(15),
-              child: Image.network(
-                photo.firebaseUrl!,  // Use the Firebase URL
-                fit: BoxFit.cover,
-                width: double.infinity,
-                height: double.infinity,
+    return GestureDetector(
+      onSecondaryTapDown: (details) => _showPhotoContextMenu(context, details.globalPosition, photo),
+      onLongPress: () => _showPhotoContextMenu(context, Offset(200, 200), photo),
+      child: InkWell(
+        onTap: () => _showEnlargedImage(photo),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: AppColors.inputGradient,
+            borderRadius: BorderRadius.circular(15),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 5,
+                offset: const Offset(0, 3),
               ),
-            ),
-            // Title overlay
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withOpacity(0.7),
-                      Colors.transparent,
+            ],
+          ),
+          child: Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(15),
+                child: Image.network(
+                  photo.firebaseUrl!,  // Use the Firebase URL
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: double.infinity,
+                ),
+              ),
+              // Title overlay
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withOpacity(0.7),
+                        Colors.transparent,
+                      ],
+                    ),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(15),
+                      topRight: Radius.circular(15),
+                    ),
+                  ),
+                  padding: const EdgeInsets.all(8.0),
+                  child: Text(
+                    photo.title,  // Use the stored title
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+              // Like icon
+              Positioned(
+                bottom: 8,
+                right: 8,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: InkWell(
+                    onTap: () async {
+                      // Toggle like immediately using ValueNotifier
+                      final notifier = _likeNotifiers[photo.id];
+                      if (notifier != null) {
+                        notifier.value = !notifier.value;
+                        photo.isLiked = notifier.value;
+                      }
+                      
+                      // Save like to Firestore
+                      await _toggleLike(photo);
+                    },
+                    child: ValueListenableBuilder<bool>(
+                      valueListenable: _likeNotifiers[photo.id] ?? ValueNotifier<bool>(photo.isLiked),
+                      builder: (context, isLiked, child) {
+                        return Icon(
+                          isLiked ? Icons.favorite : Icons.favorite_border,
+                          color: isLiked ? Colors.red : Colors.white,
+                          size: 20,
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              // Context menu button for accessibility
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert, color: Colors.white, size: 20),
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'delete':
+                          _deletePhoto(photo);
+                          break;
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete, color: Colors.red),
+                            SizedBox(width: 8),
+                            Text('Delete Photo'),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(15),
-                    topRight: Radius.circular(15),
-                  ),
-                ),
-                padding: const EdgeInsets.all(8.0),
-                child: Text(
-                  photo.title,  // Use the stored title
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-            ),
-            // Like icon
-            Positioned(
-              bottom: 8,
-              right: 8,
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.5),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: InkWell(
-                  onTap: () async {
-                    // Toggle like immediately using ValueNotifier
-                    final notifier = _likeNotifiers[photo.id];
-                    if (notifier != null) {
-                      notifier.value = !notifier.value;
-                      photo.isLiked = notifier.value;
-                    }
-                    
-                    // Save like to Firestore
-                    await _toggleLike(photo);
-                  },
-                  child: ValueListenableBuilder<bool>(
-                    valueListenable: _likeNotifiers[photo.id] ?? ValueNotifier<bool>(photo.isLiked),
-                    builder: (context, isLiked, child) {
-                      return Icon(
-                        isLiked ? Icons.favorite : Icons.favorite_border,
-                        color: isLiked ? Colors.red : Colors.white,
-                        size: 20,
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1012,6 +1049,137 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
         );
       }
       rethrow;  // Rethrow to handle in calling code
+    }
+  }
+
+  void _showPhotoContextMenu(BuildContext context, Offset position, PhotoData photo) {
+    showMenu(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromPoints(position, position),
+        Offset.zero & MediaQuery.of(context).size,
+      ),
+      items: [
+        PopupMenuItem(
+          child: const Row(
+            children: [
+              Icon(Icons.delete, color: Colors.red),
+              SizedBox(width: 8),
+              Text('Delete Photo'),
+            ],
+          ),
+          onTap: () => _deletePhoto(photo),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _deletePhoto(PhotoData photo) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppColors.dialogBackground,
+          title: const Text(
+            'Delete Photo',
+            style: TextStyle(color: AppColors.titleText),
+          ),
+          content: Text(
+            'Are you sure you want to delete this photo? This action cannot be undone.',
+            style: const TextStyle(color: AppColors.titleText),
+          ),
+          actions: [
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () => Navigator.of(context).pop(false),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.brown,
+              ),
+            ),
+            TextButton(
+              child: const Text('Delete', style: TextStyle(color: Colors.red)),
+              onPressed: () => Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.red,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      try {
+        final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
+        if (currentUser == null) return;
+
+        // Show loading indicator
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          },
+        );
+
+        // Delete from storage
+        if (photo.firebaseUrl != null) {
+          try {
+            final storage = FirebaseStorage.instance;
+            final ref = storage.refFromURL(photo.firebaseUrl!);
+            await ref.delete();
+          } catch (e) {
+            print('Error deleting photo from storage: $e');
+          }
+        }
+
+        // Delete likes for this photo
+        final likesQuery = await FirestoreService.likes
+            .where('photoId', isEqualTo: photo.id)
+            .get();
+
+        // Delete comments for this photo
+        final commentsQuery = await FirestoreService.comments
+            .where('photoId', isEqualTo: photo.id)
+            .get();
+
+        // Delete photo document and related data
+        final batch = FirebaseFirestore.instance.batch();
+        
+        for (var likeDoc in likesQuery.docs) {
+          batch.delete(likeDoc.reference);
+        }
+        
+        for (var commentDoc in commentsQuery.docs) {
+          batch.delete(commentDoc.reference);
+        }
+        
+        batch.delete(FirestoreService.photos.doc(photo.id));
+        
+        await batch.commit();
+
+        // Update app state
+        if (mounted) {
+          final appState = Provider.of<AppState>(context, listen: false);
+          appState.removePhoto(photo.id);
+          // Remove the like notifier
+          _likeNotifiers.remove(photo.id);
+        }
+
+        Navigator.pop(context); // Hide loading indicator
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Photo deleted successfully')),
+        );
+      } catch (e) {
+        Navigator.pop(context); // Hide loading indicator
+        print('Error deleting photo: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete photo: ${e.toString()}')),
+        );
+      }
     }
   }
 } 

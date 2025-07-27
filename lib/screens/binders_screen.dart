@@ -50,7 +50,7 @@ class _BindersScreenState extends State<BindersScreen> {
       final appState = Provider.of<AppState>(context, listen: false);
       await appState.initializeUser();
       await _loadBinders();
-      _loadBinderPhotos();
+      await _loadBinderPhotos();
     });
   }
 
@@ -98,20 +98,59 @@ class _BindersScreenState extends State<BindersScreen> {
         }
       }
 
-      // Firestore: Get photos uploaded directly to binders screen (no specific binder assignment)
+      // Firestore: Get photos for this album that are directly assigned to binders (not to notebooks)
       final photosQuery = await FirestoreService.photos
           .where('userId', isEqualTo: currentUser.uid)
-          .where('source', isEqualTo: PhotoSources.albums)
           .where('albumName', isEqualTo: widget.parentAlbumName)
           .get(); // Get all photos for this album
+          
+      // Also check for photos specifically assigned to "Awesome Binder" for debugging
+      final awesomeBinderQuery = await FirestoreService.photos
+          .where('userId', isEqualTo: currentUser.uid)
+          .where('binderName', isEqualTo: 'Awesome Binder')
+          .get();
+      print('🔍 Found ${awesomeBinderQuery.docs.length} photos assigned to "Awesome Binder"');
+      for (var doc in awesomeBinderQuery.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        print('  Awesome Binder photo: ${doc.id} - source=${data['source']}, albumName=${data['albumName']}');
+      }
+      
+      // Check for photos assigned to "Awesome Binder" in the current album
+      final awesomeBinderInAlbumQuery = await FirestoreService.photos
+          .where('userId', isEqualTo: currentUser.uid)
+          .where('binderName', isEqualTo: 'Awesome Binder')
+          .where('albumName', isEqualTo: widget.parentAlbumName)
+          .get();
+      print('🔍 Found ${awesomeBinderInAlbumQuery.docs.length} photos assigned to "Awesome Binder" in album "${widget.parentAlbumName}"');
 
       binderPhotos.clear();
+      // Initialize binders
       for (var binder in binders) {
         binderPhotos[binder] = [];
       }
+      // Initialize Unsorted collection for photos without specific binder assignment
+      binderPhotos['Unsorted'] = [];
 
+      print('📸 Found ${photosQuery.docs.length} total photos for this album');
+      print('🔍 All photos data:');
       for (var doc in photosQuery.docs) {
         final data = doc.data() as Map<String, dynamic>;
+        final notebookName = data['notebookName'];
+        final binderName = data['binderName'];
+        print('  Photo ${doc.id}: source=${data['source']}, albumName=${data['albumName']}, binderName=$binderName, notebookName=$notebookName');
+      }
+      
+      for (var doc in photosQuery.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        print('🔍 Processing photo: ${doc.id} with data: $data');
+        
+        // Skip photos that are assigned to notebooks (they have a notebookName field)
+        final notebookName = data['notebookName'];
+        if (notebookName != null && notebookName.isNotEmpty && notebookName != 'Unsorted') {
+          print('⏭️ Skipping photo ${doc.id} - assigned to notebook: $notebookName');
+          continue;
+        }
+        
         final photoLikes = likesMap[doc.id] ?? {};
         final isLiked = currentUser != null && photoLikes[currentUser.uid] == true;
         
@@ -130,21 +169,34 @@ class _BindersScreenState extends State<BindersScreen> {
         _likeNotifiers[photo.id] = ValueNotifier<bool>(isLiked);
         
         final binderName = data['binderName'] ?? 'Unsorted';
+        print('📁 Assigning photo to binder: $binderName');
         
         // If it's an unsorted photo, add to main grid
         if (binderName == 'Unsorted') {
-          if (binderPhotos.containsKey('Main Grid')) {
-            binderPhotos['Main Grid']!.add(photo);
+          if (binderPhotos.containsKey('Unsorted')) {
+            binderPhotos['Unsorted']!.add(photo);
+            print('✅ Added photo to Unsorted collection. Total: ${binderPhotos['Unsorted']!.length}');
           } else {
-            binderPhotos['Main Grid'] = [photo];
+            binderPhotos['Unsorted'] = [photo];
+            print('✅ Created Unsorted collection with photo');
           }
         } 
-        // If it's assigned to a specific binder, add to that binder
-        else if (binderPhotos.containsKey(binderName)) {
+        // If it's assigned to a specific binder, add to that binder (dynamically create entry if needed)
+        else {
+          if (!binderPhotos.containsKey(binderName)) {
+            binderPhotos[binderName] = [];
+            print('📁 Created new binder entry for: "$binderName"');
+          }
           binderPhotos[binderName]!.add(photo);
+          print('✅ Added photo to binder "$binderName". Total: ${binderPhotos[binderName]!.length}');
         }
       }
 
+      print('📁 Final binderPhotos map: ${binderPhotos.keys.toList()}');
+      for (var entry in binderPhotos.entries) {
+        print('📁 "${entry.key}": ${entry.value.length} photos');
+      }
+      
       setState(() {});
     } catch (e) {
       print('Error loading binder photos: $e');
@@ -605,6 +657,8 @@ class _BindersScreenState extends State<BindersScreen> {
   }
 
   Widget _buildBindersGrid(BuildContext context) {
+    print('🎯 Building binders grid with ${binders.length} binders and ${binderPhotos['Unsorted']?.length ?? 0} unsorted photos');
+    print('📊 Total binderPhotos keys: ${binderPhotos.keys.toList()}');
     return _isLoading && binderPhotos.isEmpty
         ? const Center(child: CircularProgressIndicator())
         : GridView.builder(
@@ -614,7 +668,7 @@ class _BindersScreenState extends State<BindersScreen> {
               mainAxisSpacing: 8,
               childAspectRatio: 0.75,
             ),
-            itemCount: binders.length + (binderPhotos['Main Grid']?.length ?? 0),
+            itemCount: binders.length + (binderPhotos['Unsorted']?.length ?? 0),
             itemBuilder: (context, index) {
               // First show binders
               if (index < binders.length) {
@@ -623,9 +677,9 @@ class _BindersScreenState extends State<BindersScreen> {
               // Then show photos from main grid
               else {
                 final photoIndex = index - binders.length;
-                if (binderPhotos['Main Grid'] != null && 
-                    photoIndex < binderPhotos['Main Grid']!.length) {
-                  final photo = binderPhotos['Main Grid']![photoIndex];
+                if (binderPhotos['Unsorted'] != null && 
+                    photoIndex < binderPhotos['Unsorted']!.length) {
+                  final photo = binderPhotos['Unsorted']![photoIndex];
                   return _buildPhotoCard(photo);
                 }
                 return const SizedBox();
