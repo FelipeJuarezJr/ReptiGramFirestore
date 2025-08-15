@@ -6,12 +6,10 @@ import '../styles/colors.dart';
 import '../common/header.dart';
 import '../common/title_header.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:path/path.dart' as path;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import '../models/photo_data.dart';
-import '../utils/photo_utils.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
 import '../constants/photo_sources.dart';
@@ -329,7 +327,6 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 20),
                               Text(
                                 widget.notebookName,
                                 style: const TextStyle(

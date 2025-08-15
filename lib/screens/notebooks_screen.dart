@@ -247,16 +247,7 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                                       color: AppColors.titleText,
                                     ),
                                     onPressed: () {
-                                      Navigator.pushReplacement(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) => BindersScreen(
-                                            binderName: widget.notebookName,
-                                            parentAlbumName: widget.parentAlbumName,
-                                            source: PhotoSources.binders,
-                                          ),
-                                        ),
-                                      );
+                                      Navigator.pop(context);
                                     },
                                   ),
                                   const Text(
@@ -269,6 +260,18 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                                   ),
                                 ],
                               ),
+                              // Display notebook name if available
+                              if (widget.notebookName.isNotEmpty) ...[
+                                const SizedBox(height: 20),
+                                Text(
+                                  widget.notebookName,
+                                  style: const TextStyle(
+                                    color: AppColors.titleText,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
                               const SizedBox(height: 20),
                               _buildActionButtons(context),
                             ],
@@ -315,16 +318,7 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                         color: AppColors.titleText,
                       ),
                       onPressed: () {
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => BindersScreen(
-                              binderName: widget.notebookName,
-                              parentAlbumName: widget.parentAlbumName,
-                              source: PhotoSources.binders,
-                            ),
-                          ),
-                        );
+                        Navigator.pop(context);
                       },
                     ),
                   ),
@@ -431,6 +425,18 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                   ],
                 ),
                 const SizedBox(height: 74),
+                // Display notebook name if available
+                if (widget.notebookName.isNotEmpty) ...[
+                  Text(
+                    widget.notebookName,
+                    style: const TextStyle(
+                      color: AppColors.titleText,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ],
                 // Notebooks Grid
                 Expanded(
                   child: _buildNotebooksGrid(context),

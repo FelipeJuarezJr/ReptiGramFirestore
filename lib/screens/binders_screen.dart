@@ -382,6 +382,31 @@ class _BindersScreenState extends State<BindersScreen> {
                                   ),
                                 ],
                               ),
+                              // Display binder name if available
+                              if (widget.binderName != null && widget.binderName!.isNotEmpty) ...[
+                                const SizedBox(height: 20),
+                                Text(
+                                  'Binder: ${widget.binderName}',
+                                  style: const TextStyle(
+                                    color: AppColors.titleText,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                              // Display album name as main title when not in a notebook context
+                              if (widget.parentAlbumName != null && widget.parentAlbumName!.isNotEmpty && 
+                                  (widget.binderName == null || widget.binderName!.isEmpty)) ...[
+                                const SizedBox(height: 20),
+                                Text(
+                                  widget.parentAlbumName!,
+                                  style: const TextStyle(
+                                    color: AppColors.titleText,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
                               const SizedBox(height: 20),
                               _buildActionButtons(context),
                             ],
@@ -428,12 +453,7 @@ class _BindersScreenState extends State<BindersScreen> {
                         color: AppColors.titleText,
                       ),
                       onPressed: () {
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const AlbumsScreen(),
-                          ),
-                        );
+                        Navigator.pop(context);
                       },
                     ),
                   ),
@@ -530,6 +550,31 @@ class _BindersScreenState extends State<BindersScreen> {
                   ],
                 ),
                 const SizedBox(height: 74),
+                // Display binder name if available
+                if (widget.binderName != null && widget.binderName!.isNotEmpty) ...[
+                  Text(
+                    'Binder: ${widget.binderName}',
+                    style: const TextStyle(
+                      color: AppColors.titleText,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ],
+                // Display album name as main title when not in a notebook context
+                if (widget.parentAlbumName != null && widget.parentAlbumName!.isNotEmpty && 
+                    (widget.binderName == null || widget.binderName!.isEmpty)) ...[
+                  Text(
+                    widget.parentAlbumName!,
+                    style: const TextStyle(
+                      color: AppColors.titleText,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ],
                 // Binders Grid
                 Expanded(
                   child: _buildBindersGrid(context),
@@ -704,7 +749,7 @@ class _BindersScreenState extends State<BindersScreen> {
             context,
             MaterialPageRoute(
               builder: (context) => NotebooksScreen(
-                notebookName: 'Default Notebook',
+                notebookName: binderName,
                 parentBinderName: binderName,
                 parentAlbumName: widget.parentAlbumName!,
                 source: PhotoSources.notebooks,

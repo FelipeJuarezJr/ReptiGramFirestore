@@ -1232,7 +1232,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
 
   Widget _buildPhotoCard(PhotoData photo) {
     print('🎨 Building photo card for: ${photo.title}');
-    print('�� Photo URL: ${photo.firebaseUrl}');
+    print('🔗 Photo URL: ${photo.firebaseUrl}');
     print('🆔 Photo ID: ${photo.id}');
     
     return GestureDetector(
