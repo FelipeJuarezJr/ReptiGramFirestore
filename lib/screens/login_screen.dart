@@ -214,7 +214,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 24),
                     const Text(
-                      'ReptiGram',
+                      'Reptigram',
                       style: TextStyle(
                         fontSize: 48,
                         fontWeight: FontWeight.bold,
@@ -310,7 +310,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             const SizedBox(height: 20),
             const Text(
-              'ReptiGram',
+              'Reptigram',
               style: TextStyle(
                 fontSize: 40,
                 fontWeight: FontWeight.bold,

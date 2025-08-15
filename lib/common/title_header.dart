@@ -68,7 +68,7 @@ class TitleHeader extends StatelessWidget {
           const Expanded(
             child: Center(
               child: Text(
-                'ReptiGram',
+                'Reptigram',
                 style: TextStyle(
                   fontSize: 40,
                   fontWeight: FontWeight.bold,
