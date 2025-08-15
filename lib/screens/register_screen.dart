@@ -34,7 +34,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       });
 
       try {
+        print('🔐 Starting registration process...');
+        
         // Check if username is already taken
+        print('🔍 Checking username availability...');
         final isAvailable = await FirestoreService.isUsernameAvailable(_usernameController.text.trim());
         
         if (!isAvailable) {
@@ -48,12 +51,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
           });
           return;
         }
+        print('✅ Username is available');
 
         // Create user account
+        print('👤 Creating Firebase Auth user...');
         final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         );
+        
+        print('✅ Firebase Auth user created: ${userCredential.user!.uid}');
         
         // Save user data using batch operation
         final String uid = userCredential.user!.uid;
@@ -63,6 +70,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           'createdAt': FirestoreService.serverTimestamp,
         };
         
+        print('💾 Saving user data to Firestore...');
         // Use batch operation for better performance and consistency
         await FirestoreService.batchCreateUserAndReserveUsername(UserModel(
           uid: uid,
@@ -71,12 +79,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
           createdAt: DateTime.now(),
           lastLogin: DateTime.now(),
         ));
+        print('✅ User data saved to Firestore');
             
+        print('📝 Updating display name...');
         final Future<void> displayNameFuture = userCredential.user!
             .updateDisplayName(_usernameController.text.trim());
 
         // Wait for display name update to complete
         await displayNameFuture;
+        print('✅ Display name updated');
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -85,11 +96,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
           Navigator.pop(context); // Return to login screen
         }
       } on FirebaseAuthException catch (e) {
+        print('❌ Firebase Auth error: ${e.code} - ${e.message}');
         String message = 'An error occurred';
         if (e.code == 'weak-password') {
           message = 'The password provided is too weak.';
         } else if (e.code == 'email-already-in-use') {
           message = 'An account already exists for that email.';
+        } else if (e.code == 'invalid-email') {
+          message = 'Invalid email address.';
+        } else if (e.code == 'operation-not-allowed') {
+          message = 'Email/password accounts are not enabled. Please contact support.';
         }
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -97,6 +113,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           );
         }
       } catch (e) {
+        print('❌ General error during registration: $e');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Error: ${e.toString()}')),
