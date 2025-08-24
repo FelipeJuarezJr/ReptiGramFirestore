@@ -51,6 +51,17 @@ class FirestoreService {
 
   // Post operations
   static Future<DocumentReference> createPost(Map<String, dynamic> postData) async {
+    // Get current user info for author details
+    final currentUser = _auth.currentUser;
+    if (currentUser != null) {
+      final userDoc = await users.doc(currentUser.uid).get();
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>;
+        postData['authorUsername'] = userData['username'] ?? '';
+        postData['authorPhotoUrl'] = userData['photoUrl'] ?? '';
+      }
+    }
+    
     return await posts.add(postData);
   }
 
@@ -101,6 +112,17 @@ class FirestoreService {
 
   // Photo operations
   static Future<DocumentReference> createPhoto(Map<String, dynamic> photoData) async {
+    // Get current user info for author details
+    final currentUser = _auth.currentUser;
+    if (currentUser != null) {
+      final userDoc = await users.doc(currentUser.uid).get();
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>;
+        photoData['authorUsername'] = userData['username'] ?? '';
+        photoData['authorPhotoUrl'] = userData['photoUrl'] ?? '';
+      }
+    }
+    
     return await photos.add(photoData);
   }
 
@@ -181,6 +203,143 @@ class FirestoreService {
 
   static Future<QuerySnapshot> getNotebooks() async {
     return await notebooks.orderBy('timestamp', descending: true).get();
+  }
+
+  // Follow operations
+  static Future<void> followUser(String targetUserId) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) throw Exception('User not authenticated');
+
+    final currentUserId = currentUser.uid;
+    
+    // Use batch write for atomicity
+    final batch = _firestore.batch();
+    
+    // Add to current user's following collection
+    final followingRef = _firestore
+        .collection('users')
+        .doc(currentUserId)
+        .collection('following')
+        .doc(targetUserId);
+    
+    batch.set(followingRef, {
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    
+    // Add to target user's followers collection
+    final followersRef = _firestore
+        .collection('users')
+        .doc(targetUserId)
+        .collection('followers')
+        .doc(currentUserId);
+    
+    batch.set(followersRef, {
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    
+    // Update follow counts
+    final currentUserRef = _firestore.collection('users').doc(currentUserId);
+    final targetUserRef = _firestore.collection('users').doc(targetUserId);
+    
+    batch.update(currentUserRef, {
+      'followingCount': FieldValue.increment(1),
+    });
+    
+    batch.update(targetUserRef, {
+      'followersCount': FieldValue.increment(1),
+    });
+    
+    await batch.commit();
+  }
+
+  static Future<void> unfollowUser(String targetUserId) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) throw Exception('User not authenticated');
+
+    final currentUserId = currentUser.uid;
+    
+    // Use batch write for atomicity
+    final batch = _firestore.batch();
+    
+    // Remove from current user's following collection
+    final followingRef = _firestore
+        .collection('users')
+        .doc(currentUserId)
+        .collection('following')
+        .doc(targetUserId);
+    
+    batch.delete(followingRef);
+    
+    // Remove from target user's followers collection
+    final followersRef = _firestore
+        .collection('users')
+        .doc(targetUserId)
+        .collection('followers')
+        .doc(currentUserId);
+    
+    batch.delete(followersRef);
+    
+    // Update follow counts
+    final currentUserRef = _firestore.collection('users').doc(currentUserId);
+    final targetUserRef = _firestore.collection('users').doc(targetUserId);
+    
+    batch.update(currentUserRef, {
+      'followingCount': FieldValue.increment(-1),
+    });
+    
+    batch.update(targetUserRef, {
+      'followersCount': FieldValue.increment(-1),
+    });
+    
+    await batch.commit();
+  }
+
+  static Future<bool> isFollowing(String targetUserId) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return false;
+
+    final doc = await _firestore
+        .collection('users')
+        .doc(currentUser.uid)
+        .collection('following')
+        .doc(targetUserId)
+        .get();
+    
+    return doc.exists;
+  }
+
+  // Get user's timeline (posts from followed users)
+  static Stream<QuerySnapshot> getUserTimelineStream() {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) {
+      // Return an empty stream instead of null
+      return _firestore
+          .collection('users')
+          .doc('dummy')
+          .collection('timeline')
+          .limit(0)
+          .snapshots();
+    }
+
+    return _firestore
+        .collection('users')
+        .doc(currentUser.uid)
+        .collection('timeline')
+        .orderBy('timestamp', descending: true)
+        .limit(50)
+        .snapshots();
+  }
+
+  // Get follow counts for a user
+  static Future<Map<String, int>> getFollowCounts(String userId) async {
+    final doc = await _firestore.collection('users').doc(userId).get();
+    if (!doc.exists) return {'followers': 0, 'following': 0};
+    
+    final data = doc.data() as Map<String, dynamic>;
+    return {
+      'followers': data['followersCount'] ?? 0,
+      'following': data['followingCount'] ?? 0,
+    };
   }
 
   // Utility methods

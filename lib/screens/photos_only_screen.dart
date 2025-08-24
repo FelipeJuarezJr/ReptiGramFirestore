@@ -262,7 +262,7 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
     return Column(
       children: [
         const TitleHeader(),
-        const Header(initialIndex: 1),
+        const Header(),
         Expanded(
           child: Container(
             constraints: const BoxConstraints(maxWidth: 1400),
@@ -364,7 +364,7 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
     return Column(
       children: [
         const TitleHeader(),
-        const Header(initialIndex: 1),
+        const Header(),
         Expanded(
           child: Padding(
             padding: const EdgeInsets.all(16.0),

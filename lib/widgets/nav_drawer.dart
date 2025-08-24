@@ -188,7 +188,8 @@ class _NavDrawerState extends State<NavDrawer> {
                   constraints: const BoxConstraints(),
                 ),
                 Text(
-                  'Navigation',
+                  // Use to say "Navigation"
+                  '',
                   style: const TextStyle(
                     color: AppColors.titleText,
                     fontSize: 20,

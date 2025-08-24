@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../styles/colors.dart';
 import '../common/header.dart';
 import '../common/title_header.dart';
+import '../widgets/main_layout.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
@@ -16,6 +17,7 @@ import '../services/firestore_service.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import '../utils/responsive_utils.dart';
+import '../widgets/bottom_navigation_bar.dart';
 
 class PostScreen extends StatefulWidget {
   final bool shouldLoadPosts;
@@ -822,19 +824,29 @@ class _PostScreenState extends State<PostScreen> {
           gradient: AppColors.mainGradient,
         ),
         child: SafeArea(
-          child: ResponsiveUtils.isWideScreen(context) 
-              ? _buildDesktopLayout(context, appState)
-              : _buildMobileLayout(context, appState, postWidth),
+          child: Column(
+            children: [
+              // TitleHeader at the very top
+              const TitleHeader(),
+              // Header with navigation
+              const Header(initialIndex: 0),
+              // Main content
+              Expanded(
+                child: ResponsiveUtils.isWideScreen(context)
+                    ? _buildDesktopLayout(context, appState)
+                    : _buildMobileLayout(context, appState, postWidth),
+              ),
+            ],
+          ),
         ),
       ),
+      bottomNavigationBar: const BottomNavigationBarWidget(),
     );
   }
 
   Widget _buildDesktopLayout(BuildContext context, AppState appState) {
     return Column(
       children: [
-        const TitleHeader(),
-        const Header(initialIndex: 0),
         Expanded(
           child: Container(
             constraints: const BoxConstraints(maxWidth: 1400),
@@ -914,8 +926,6 @@ class _PostScreenState extends State<PostScreen> {
   Widget _buildMobileLayout(BuildContext context, AppState appState, double postWidth) {
     return Column(
       children: [
-        const TitleHeader(),
-        const Header(initialIndex: 0),
         
         // Fixed Post Creation Form
         Padding(

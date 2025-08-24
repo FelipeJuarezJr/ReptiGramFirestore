@@ -169,4 +169,180 @@ exports.updateFcmToken = functions.https.onCall(async (data, context) => {
     console.error('Error updating FCM token:', error);
     throw new functions.https.HttpsError('internal', 'Failed to update FCM token');
   }
-}); 
+});
+
+// Timeline fan-out: Copy posts to followers' timelines when someone posts
+exports.fanOutPostToFollowers = functions.firestore
+  .document('posts/{postId}')
+  .onCreate(async (snapshot, context) => {
+    const postData = snapshot.data();
+    if (!postData) {
+      console.log('No post data found');
+      return null;
+    }
+
+    const authorId = postData.userId;
+    const postId = context.params.postId;
+
+    if (!authorId) {
+      console.log('No author ID found in post');
+      return null;
+    }
+
+    try {
+      console.log(`Fanning out post ${postId} from user ${authorId} to followers`);
+
+      // Get all followers of the author
+      const followersRef = admin.firestore()
+        .collection('users')
+        .doc(authorId)
+        .collection('followers');
+      
+      const followersSnap = await followersRef.get();
+
+      if (followersSnap.empty) {
+        console.log(`No followers found for user ${authorId}`);
+        return null;
+      }
+
+      console.log(`Found ${followersSnap.size} followers for user ${authorId}`);
+
+      // Prepare the post data for timeline (with author info)
+      const timelinePostData = {
+        ...postData,
+        authorUsername: postData.authorUsername || '',
+        authorPhotoUrl: postData.authorPhotoUrl || '',
+        timestamp: postData.timestamp || admin.firestore.FieldValue.serverTimestamp(),
+      };
+
+      // Use batched writes for better performance
+      const batchArray = [];
+      let batch = admin.firestore().batch();
+      let opCount = 0;
+
+      followersSnap.forEach((doc) => {
+        const followerId = doc.id;
+
+        const timelineRef = admin.firestore()
+          .collection('users')
+          .doc(followerId)
+          .collection('timeline')
+          .doc(postId);
+
+        batch.set(timelineRef, timelinePostData);
+        opCount++;
+
+        // Firestore batch limit = 500 writes
+        if (opCount === 500) {
+          batchArray.push(batch);
+          batch = admin.firestore().batch();
+          opCount = 0;
+        }
+      });
+
+      // Add the last batch if it has operations
+      if (opCount > 0) {
+        batchArray.push(batch);
+      }
+
+      // Commit all batches sequentially
+      console.log(`Committing ${batchArray.length} batches for timeline fan-out`);
+      for (const b of batchArray) {
+        await b.commit();
+      }
+
+      console.log(`Successfully fanned out post ${postId} to ${followersSnap.size} followers`);
+      return null;
+    } catch (error) {
+      console.error('Error fanning out post to followers:', error);
+      throw error;
+    }
+  });
+
+// Also fan out photos to followers' timelines
+exports.fanOutPhotoToFollowers = functions.firestore
+  .document('photos/{photoId}')
+  .onCreate(async (snapshot, context) => {
+    const photoData = snapshot.data();
+    if (!photoData) {
+      console.log('No photo data found');
+      return null;
+    }
+
+    const authorId = photoData.userId;
+    const photoId = context.params.photoId;
+
+    if (!authorId) {
+      console.log('No author ID found in photo');
+      return null;
+    }
+
+    try {
+      console.log(`Fanning out photo ${photoId} from user ${authorId} to followers`);
+
+      // Get all followers of the author
+      const followersRef = admin.firestore()
+        .collection('users')
+        .doc(authorId)
+        .collection('followers');
+      
+      const followersSnap = await followersRef.get();
+
+      if (followersSnap.empty) {
+        console.log(`No followers found for user ${authorId}`);
+        return null;
+      }
+
+      console.log(`Found ${followersSnap.size} followers for user ${authorId}`);
+
+      // Prepare the photo data for timeline
+      const timelinePhotoData = {
+        ...photoData,
+        authorUsername: photoData.authorUsername || '',
+        authorPhotoUrl: photoData.authorPhotoUrl || '',
+        timestamp: photoData.timestamp || admin.firestore.FieldValue.serverTimestamp(),
+      };
+
+      // Use batched writes for better performance
+      const batchArray = [];
+      let batch = admin.firestore().batch();
+      let opCount = 0;
+
+      followersSnap.forEach((doc) => {
+        const followerId = doc.id;
+
+        const timelineRef = admin.firestore()
+          .collection('users')
+          .doc(followerId)
+          .collection('timeline')
+          .doc(photoId);
+
+        batch.set(timelineRef, timelinePhotoData);
+        opCount++;
+
+        // Firestore batch limit = 500 writes
+        if (opCount === 500) {
+          batchArray.push(batch);
+          batch = admin.firestore().batch();
+          opCount = 0;
+        }
+      });
+
+      // Add the last batch if it has operations
+      if (opCount > 0) {
+        batchArray.push(batch);
+      }
+
+      // Commit all batches sequentially
+      console.log(`Committing ${batchArray.length} batches for photo timeline fan-out`);
+      for (const b of batchArray) {
+        await b.commit();
+      }
+
+      console.log(`Successfully fanned out photo ${photoId} to ${followersSnap.size} followers`);
+      return null;
+    } catch (error) {
+      console.error('Error fanning out photo to followers:', error);
+      throw error;
+    }
+  }); 

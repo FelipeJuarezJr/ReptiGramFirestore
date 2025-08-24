@@ -7,6 +7,9 @@ class AppColors {
   static const Color gradientStart = Color(0xFFFFDE59); // top left
   static const Color gradientEnd = Color(0xFFFF914D);   // bottom right
 
+  // Primary and background colors for the follow feature
+  static const Color primary = Color(0xFFFF914D); // Use gradientEnd as primary
+  static const Color background = Color(0xFFFFF8E1); // Light cream background
 
   // Text colors
   static const Color logoTitleText = Color(0xFFf6e29b);     // Gold text for title and links

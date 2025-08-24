@@ -8,7 +8,9 @@ import '../utils/responsive_utils.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class TitleHeader extends StatelessWidget {
-  const TitleHeader({super.key});
+  final String? title;
+  
+  const TitleHeader({super.key, this.title});
 
   @override
   Widget build(BuildContext context) {
@@ -65,10 +67,10 @@ class TitleHeader extends StatelessWidget {
               );
             },
           ),
-          const Expanded(
+          Expanded(
             child: Center(
               child: Text(
-                'Reptigram',
+                title ?? 'Reptigram',
                 style: TextStyle(
                   fontSize: 40,
                   fontWeight: FontWeight.bold,

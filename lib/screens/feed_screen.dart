@@ -668,7 +668,7 @@ class _FeedScreenState extends State<FeedScreen> {
     return Column(
       children: [
         const TitleHeader(),
-        const Header(initialIndex: 2),
+        const Header(),
         Expanded(
           child: Container(
             constraints: const BoxConstraints(maxWidth: 1400),
@@ -760,7 +760,7 @@ class _FeedScreenState extends State<FeedScreen> {
     return Column(
       children: [
         const TitleHeader(),
-        const Header(initialIndex: 2),
+        const Header(),
         Expanded(
           child: _isLoading
               ? const Center(child: CircularProgressIndicator())

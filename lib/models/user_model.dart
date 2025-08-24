@@ -5,6 +5,9 @@ class UserModel {
   final DateTime createdAt;
   final DateTime? lastLogin;
   final Map<String, dynamic>? preferences;
+  final int followersCount;
+  final int followingCount;
+  final String? photoUrl;
 
   UserModel({
     required this.uid,
@@ -13,6 +16,9 @@ class UserModel {
     required this.createdAt,
     this.lastLogin,
     this.preferences,
+    this.followersCount = 0,
+    this.followingCount = 0,
+    this.photoUrl,
   });
 
   // Create from Firebase User and additional data
@@ -26,6 +32,9 @@ class UserModel {
         ? DateTime.fromMillisecondsSinceEpoch(json['lastLogin'] as int)
         : null,
       preferences: json['preferences'] as Map<String, dynamic>?,
+      followersCount: json['followersCount'] as int? ?? 0,
+      followingCount: json['followingCount'] as int? ?? 0,
+      photoUrl: json['photoUrl'] as String?,
     );
   }
 
@@ -38,6 +47,9 @@ class UserModel {
       'createdAt': createdAt.millisecondsSinceEpoch,
       'lastLogin': lastLogin?.millisecondsSinceEpoch,
       'preferences': preferences,
+      'followersCount': followersCount,
+      'followingCount': followingCount,
+      'photoUrl': photoUrl,
     };
   }
 
@@ -46,6 +58,9 @@ class UserModel {
     String? username,
     DateTime? lastLogin,
     Map<String, dynamic>? preferences,
+    int? followersCount,
+    int? followingCount,
+    String? photoUrl,
   }) {
     return UserModel(
       uid: uid,
@@ -54,6 +69,9 @@ class UserModel {
       createdAt: createdAt,
       lastLogin: lastLogin ?? this.lastLogin,
       preferences: preferences ?? this.preferences,
+      followersCount: followersCount ?? this.followersCount,
+      followingCount: followingCount ?? this.followingCount,
+      photoUrl: photoUrl ?? this.photoUrl,
     );
   }
 } 

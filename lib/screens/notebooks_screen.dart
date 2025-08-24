@@ -195,7 +195,7 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
     return Column(
       children: [
         const TitleHeader(),
-        const Header(initialIndex: 1),
+        const Header(),
         Expanded(
           child: Container(
             constraints: const BoxConstraints(maxWidth: 1400),
@@ -301,7 +301,7 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
     return Column(
       children: [
         const TitleHeader(),
-        const Header(initialIndex: 1),
+        const Header(),
         Expanded(
           child: Padding(
             padding: const EdgeInsets.all(16.0),
