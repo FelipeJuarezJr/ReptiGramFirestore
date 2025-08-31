@@ -341,6 +341,101 @@ class _PostScreenState extends State<PostScreen> {
     }
   }
 
+  Future<void> _deletePost(PostModel post) async {
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null || userId != post.userId) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppColors.dialogBackground,
+          title: const Text(
+            'Delete Post',
+            style: TextStyle(color: AppColors.titleText),
+          ),
+          content: Text(
+            'Are you sure you want to delete this post? This action cannot be undone.',
+            style: const TextStyle(color: AppColors.titleText),
+          ),
+          actions: [
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () => Navigator.of(context).pop(false),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.brown,
+              ),
+            ),
+            TextButton(
+              child: const Text('Delete', style: TextStyle(color: Colors.red)),
+              onPressed: () => Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.red,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      try {
+        // Show loading indicator
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          },
+        );
+
+        // Delete likes for this post
+        final likesQuery = await FirestoreService.likes
+            .where('postId', isEqualTo: post.id)
+            .get();
+
+        // Delete comments for this post
+        final commentsQuery = await FirestoreService.comments
+            .where('postId', isEqualTo: post.id)
+            .get();
+
+        // Delete post document and related data
+        final batch = FirebaseFirestore.instance.batch();
+        
+        for (var likeDoc in likesQuery.docs) {
+          batch.delete(likeDoc.reference);
+        }
+        
+        for (var commentDoc in commentsQuery.docs) {
+          batch.delete(commentDoc.reference);
+        }
+        
+        batch.delete(FirestoreService.posts.doc(post.id));
+        
+        await batch.commit();
+
+        Navigator.pop(context); // Hide loading indicator
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Post deleted successfully')),
+          );
+          await _loadPosts(); // Reload posts to update the UI
+        }
+      } catch (e) {
+        Navigator.pop(context); // Hide loading indicator
+        print('Error deleting post: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to delete post: ${e.toString()}')),
+          );
+        }
+      }
+    }
+  }
+
   void _showCommentDialog(PostModel post) {
     final commentController = TextEditingController();
     final appState = Provider.of<AppState>(context, listen: false);
@@ -693,6 +788,8 @@ class _PostScreenState extends State<PostScreen> {
     }
   }
 
+
+
   Future<void> _fetchUsername(String userId) async {
     if (_usernames.containsKey(userId)) return;
 
@@ -838,8 +935,13 @@ class _PostScreenState extends State<PostScreen> {
             // Handle image loading errors by showing app logo
             print('Post avatar image failed to load: $avatarUrl, error: $exception');
             if (mounted) {
-              setState(() {
-                _avatarUrls[userId] = null;
+              // Use post-frame callback to avoid calling setState during paint
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  setState(() {
+                    _avatarUrls[userId] = null;
+                  });
+                }
               });
             }
           },
@@ -1338,6 +1440,26 @@ class _PostScreenState extends State<PostScreen> {
                                       fontWeight: FontWeight.w500,
                                     ),
                                   ),
+                            ),
+                          // Delete button - only show for current user's posts
+                          if (FirebaseAuth.instance.currentUser?.uid == post.userId)
+                            TextButton(
+                              onPressed: () => _deletePost(post),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                backgroundColor: Colors.red[100],
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: const Text(
+                                'Delete',
+                                style: TextStyle(
+                                  color: Colors.red,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
                             ),
                         ],
                       ),
