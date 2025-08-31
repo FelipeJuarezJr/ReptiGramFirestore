@@ -18,6 +18,7 @@ class FirestoreService {
   static CollectionReference get notebooks => _firestore.collection('notebooks');
   static CollectionReference get likes => _firestore.collection('likes');
   static CollectionReference get comments => _firestore.collection('comments');
+  static CollectionReference get followers => _firestore.collection('followers');
 
   // User operations
   static Future<void> createUser(UserModel user) async {
@@ -181,6 +182,59 @@ class FirestoreService {
 
   static Future<QuerySnapshot> getNotebooks() async {
     return await notebooks.orderBy('timestamp', descending: true).get();
+  }
+
+  // Follow operations
+  static Future<void> followUser(String followerId, String followedUserId) async {
+    await followers.doc('$followerId-$followedUserId').set({
+      'followerId': followerId,
+      'followedUserId': followedUserId,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static Future<void> unfollowUser(String followerId, String followedUserId) async {
+    await followers.doc('$followerId-$followedUserId').delete();
+  }
+
+  static Future<bool> isFollowingUser(String followerId, String followedUserId) async {
+    final doc = await followers.doc('$followerId-$followedUserId').get();
+    return doc.exists;
+  }
+
+  static Future<List<String>> getFollowedUserIds(String userId) async {
+    final query = await followers
+        .where('followerId', isEqualTo: userId)
+        .get();
+    
+    return query.docs
+        .map((doc) => (doc.data() as Map<String, dynamic>)['followedUserId'] as String)
+        .toList();
+  }
+
+  static Future<List<String>> getFollowerUserIds(String userId) async {
+    final query = await followers
+        .where('followedUserId', isEqualTo: userId)
+        .get();
+    
+    return query.docs
+        .map((doc) => (doc.data() as Map<String, dynamic>)['followerId'] as String)
+        .toList();
+  }
+
+  // Get posts with follow priority (followed users first, then others)
+  static Future<QuerySnapshot> getPostsWithFollowPriority(String userId) async {
+    try {
+      // Always get all posts ordered by timestamp
+      final allPosts = await posts.orderBy('timestamp', descending: true).get();
+      
+      // Note: The actual prioritization happens in the PostScreen when processing posts
+      // This method just ensures we get all posts, not just followed users' posts
+      return allPosts;
+    } catch (e) {
+      // Fallback to regular posts if follow priority fails
+      return await posts.orderBy('timestamp', descending: true).get();
+    }
   }
 
   // Utility methods

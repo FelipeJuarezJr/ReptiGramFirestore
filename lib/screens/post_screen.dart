@@ -36,65 +36,45 @@ class _PostScreenState extends State<PostScreen> {
   bool _isLoading = false;
   final Map<String, String> _usernames = {};
   final Map<String, String?> _avatarUrls = {}; // Cache for avatar URLs
+  bool _isFollowedUsersExpanded = false; // Track if followed users list is expanded
 
   @override
   void initState() {
     super.initState();
-    // Test Firestore access first
-    _testFirestoreAccess();
-    // Always load posts when screen is mounted
+    // Load posts when screen is mounted
     _loadPosts();
     _loadUsernames();
   }
 
-  Future<void> _testFirestoreAccess() async {
-    try {
-      // Check if user is authenticated
-      final user = FirebaseAuth.instance.currentUser;
-      
-      // Test posts collection
-      final postsTest = await FirestoreService.posts.limit(1).get();
-      
-      // Test users collection
-      final usersTest = await FirestoreService.users.limit(1).get();
-      
-      // Test comments collection
-      final commentsTest = await FirestoreService.comments.limit(1).get();
-      
-      // Test likes collection
-      final likesTest = await FirestoreService.likes.limit(1).get();
-      
-    } catch (e) {
-      // Handle error silently
-    }
+  // Simple refresh method
+  Future<void> _refreshPosts() async {
+    print('DEBUG: Manual refresh triggered');
+    await _loadPosts();
   }
 
   Future<void> _loadPosts() async {
     try {
       if (!mounted) return;
+      
+      print('DEBUG: Loading posts...');
       setState(() => _isLoading = true);
 
       final userId = FirebaseAuth.instance.currentUser?.uid;
       if (userId == null) {
+        print('DEBUG: No authenticated user found');
+        setState(() => _isLoading = false);
         return;
       }
 
-      // Firestore: Get all posts ordered by timestamp
-      try {
-        // First try to get posts ordered by timestamp
-        QuerySnapshot postsQuery;
-        try {
-          postsQuery = await FirestoreService.posts
+      // Get all posts ordered by timestamp
+      final postsQuery = await FirestoreService.posts
           .orderBy('timestamp', descending: true)
           .get();
-        } catch (e) {
-          // If timestamp ordering fails, get posts without ordering
-          postsQuery = await FirestoreService.posts.get();
-        }
-
-        if (!mounted) return;
+      
+      print('DEBUG: Fetched ${postsQuery.docs.length} posts from Firestore');
 
       if (postsQuery.docs.isEmpty) {
+        print('DEBUG: No posts found');
         setState(() {
           _posts.clear();
           _isLoading = false;
@@ -102,115 +82,72 @@ class _PostScreenState extends State<PostScreen> {
         return;
       }
 
+      // Get follow status for current user
+      List<String> followedUserIds = [];
       try {
-          // Get all likes and comments in batch queries
+        followedUserIds = await FirestoreService.getFollowedUserIds(userId);
+        print('DEBUG: User is following ${followedUserIds.length} users');
+      } catch (e) {
+        print('DEBUG: Could not fetch follow status: $e');
+        followedUserIds = [];
+      }
+
+      // Process posts
+      final List<PostModel> loadedPosts = [];
+      
+      for (var doc in postsQuery.docs) {
+        if (!mounted) return;
+        
+        try {
+          final data = doc.data() as Map<String, dynamic>;
+          final postId = doc.id;
+          final postUserId = data['userId'] ?? '';
           
-          // Get all likes
-          final likesQuery = await FirestoreService.likes.get();
-          final likesMap = <String, Map<String, bool>>{};
-            for (var likeDoc in likesQuery.docs) {
-              final likeData = likeDoc.data() as Map<String, dynamic>;
-            final postId = likeData['postId'] as String?;
-              final likeUserId = likeData['userId'] as String?;
-            if (postId != null && likeUserId != null) {
-              likesMap.putIfAbsent(postId, () => {});
-              likesMap[postId]![likeUserId] = true;
-            }
-          }
+          // Check if current user is following the post author
+          final isFollowing = followedUserIds.contains(postUserId);
 
-          // Get all comments
-          final commentsQuery = await FirestoreService.comments.get();
-          final commentsMap = <String, List<CommentModel>>{};
-            for (var commentDoc in commentsQuery.docs) {
-              final commentData = commentDoc.data() as Map<String, dynamic>;
-            final postId = commentData['postId'] as String?;
-            if (postId != null) {
-              final timestamp = commentData['timestamp'] is Timestamp 
-                  ? (commentData['timestamp'] as Timestamp).toDate()
-                  : DateTime.fromMillisecondsSinceEpoch(commentData['timestamp'] ?? 0);
-              
-              final comment = CommentModel(
-                id: commentDoc.id,
-                userId: commentData['userId'] ?? '',
-                content: commentData['content'] ?? '',
-                timestamp: timestamp,
-                imageUrl: commentData['imageUrl'],
-              );
-              
-              commentsMap.putIfAbsent(postId, () => []);
-              commentsMap[postId]!.add(comment);
-            }
-          }
-
-          // Process posts using the batch data
-          final List<PostModel> loadedPosts = [];
-          final Set<String> userIdsToFetch = <String>{};
-
-          for (var doc in postsQuery.docs) {
-            if (!mounted) return;
-            
-            try {
-              final data = doc.data() as Map<String, dynamic>;
-              final postId = doc.id;
-              
-              // Get likes for this post from batch data
-              final postLikes = likesMap[postId] ?? {};
-              final isLiked = postLikes.containsKey(userId);
-              final likeCount = postLikes.length;
-
-              // Get comments for this post from batch data
-              final postComments = commentsMap[postId] ?? [];
-
-            // Create post model with actual timestamp
-            final postTimestamp = data['timestamp'] is Timestamp 
-                ? (data['timestamp'] as Timestamp).toDate()
-                : DateTime.fromMillisecondsSinceEpoch(data['timestamp'] ?? 0);
-            
-            final post = PostModel(
-              id: postId,
-              userId: data['userId'] ?? '',
-                content: data['content'] ?? '[No content]',
-              timestamp: postTimestamp,
-              isLiked: isLiked,
-              likeCount: likeCount,
-                comments: postComments,
-            );
-            loadedPosts.add(post);
-
-              // Collect user IDs to fetch usernames in batch
-            if (post.userId.isNotEmpty) {
-                userIdsToFetch.add(post.userId);
-              }
-              for (var comment in postComments) {
-                if (comment.userId.isNotEmpty) {
-                  userIdsToFetch.add(comment.userId);
-                }
-            }
-          } catch (e) {
-              // Continue processing other posts if one fails
-          }
+          // Create post model
+          final postTimestamp = data['timestamp'] is Timestamp 
+              ? (data['timestamp'] as Timestamp).toDate()
+              : DateTime.fromMillisecondsSinceEpoch(data['timestamp'] ?? 0);
+          
+          final post = PostModel(
+            id: postId,
+            userId: postUserId,
+            content: data['content'] ?? '[No content]',
+            timestamp: postTimestamp,
+            isLiked: false, // Will be updated later if needed
+            likeCount: 0,   // Will be updated later if needed
+            comments: [],    // Will be updated later if needed
+            isFollowing: isFollowing,
+          );
+          loadedPosts.add(post);
+        } catch (e) {
+          print('DEBUG: Error processing post: $e');
         }
+      }
 
-          // Fetch all usernames in batch
-          await _fetchUsernamesBatch(userIdsToFetch);
+      print('DEBUG: Processed ${loadedPosts.length} posts');
 
-          if (mounted) {
+      // Sort posts: followed users first, then by timestamp
+      loadedPosts.sort((a, b) {
+        if (a.isFollowing && !b.isFollowing) return -1;
+        if (!a.isFollowing && b.isFollowing) return 1;
+        return b.timestamp.compareTo(a.timestamp);
+      });
+
+      if (mounted) {
         setState(() {
           _posts.clear();
           _posts.addAll(loadedPosts);
         });
-          }
-        } catch (e) {
-          // Handle error silently
-        }
-      } catch (e) {
-        // Handle error silently
+        print('DEBUG: Posts loaded: ${_posts.length}');
       }
     } catch (e) {
-      // Handle error silently
+      print('DEBUG: Error loading posts: $e');
     } finally {
       if (mounted) {
-      setState(() => _isLoading = false);
+        setState(() => _isLoading = false);
       }
     }
   }
@@ -298,6 +235,108 @@ class _PostScreenState extends State<PostScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to update like: ${e.toString()}')),
       );
+      }
+    }
+  }
+
+  Future<void> _toggleFollow(PostModel post) async {
+    // Store the original state for potential rollback
+    final originalFollowingState = post.isFollowing;
+    
+    try {
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      if (userId == null) return;
+
+      // Don't allow following yourself
+      if (userId == post.userId) return;
+      
+      // Optimistic update - immediately change the UI for ALL posts from this user
+      if (mounted) {
+        setState(() {
+          // Update the clicked post
+          post.isFollowing = !post.isFollowing;
+          
+          // Update ALL posts from the same user
+          for (int i = 0; i < _posts.length; i++) {
+            if (_posts[i].userId == post.userId) {
+              _posts[i].isFollowing = post.isFollowing;
+            }
+          }
+        });
+
+      }
+
+      // Firestore: Toggle follow
+      try {
+        if (post.isFollowing) {
+          await FirestoreService.followUser(userId, post.userId);
+  
+        } else {
+          await FirestoreService.unfollowUser(userId, post.userId);
+  
+        }
+        
+        // Update the following users count in the UI
+        setState(() {});
+        
+        // Show success message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(post.isFollowing ? 'Now following this user!' : 'Unfollowed this user'),
+              backgroundColor: post.isFollowing ? Colors.green : Colors.orange,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (e) {
+
+        // If follow operation fails, revert the UI state for ALL posts from this user
+        if (mounted) {
+          setState(() {
+            // Revert the clicked post
+            post.isFollowing = originalFollowingState;
+            
+            // Revert ALL posts from the same user
+            for (int i = 0; i < _posts.length; i++) {
+              if (_posts[i].userId == post.userId) {
+                _posts[i].isFollowing = originalFollowingState;
+              }
+            }
+          });
+        }
+        
+        // Show error message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to update follow status. Please try again.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+
+    } catch (e) {
+      // Revert on error for ALL posts from this user
+      if (mounted) {
+        setState(() {
+          // Revert the clicked post
+          post.isFollowing = originalFollowingState;
+          
+          // Revert ALL posts from the same user
+          for (int i = 0; i < _posts.length; i++) {
+            if (_posts[i].userId == post.userId) {
+              _posts[i].isFollowing = originalFollowingState;
+            }
+          }
+        });
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update follow: ${e.toString()}')),
+        );
       }
     }
   }
@@ -1067,175 +1106,377 @@ class _PostScreenState extends State<PostScreen> {
   }
 
   Widget _buildPostsFeed(BuildContext context, AppState appState, double? postWidth) {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16.0),
-      itemCount: _posts.length,
-      itemBuilder: (context, index) {
-        final post = _posts[index];
-        return Container(
-          width: postWidth,
-          margin: const EdgeInsets.only(bottom: 16),
-          decoration: BoxDecoration(
-            gradient: AppColors.inputGradient,
-            borderRadius: AppColors.pillShape,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    _buildUserAvatar(post.userId),
-                    const SizedBox(width: 8),
-                    FutureBuilder<String?>(
-                      future: appState.fetchUsername(post.userId),
-                      builder: (context, snapshot) {
-                        return Text(
-                          snapshot.data ?? 'Loading...',
-                          style: const TextStyle(
-                            color: Colors.brown,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  post.content,
-                  style: const TextStyle(
-                    color: Colors.brown,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    IconButton(
-                      icon: Icon(
-                        post.isLiked ? Icons.favorite : Icons.favorite_border,
-                        color: post.isLiked ? Colors.red : Colors.brown[400],
-                      ),
-                      onPressed: () => _toggleLike(post),
-                    ),
-                    Text(
-                      '${post.likeCount} likes',
-                      style: TextStyle(
-                        color: Colors.brown[400],
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    IconButton(
-                      icon: Icon(
-                        Icons.comment_outlined,
-                        color: Colors.brown[400],
-                      ),
-                      onPressed: () => _showCommentDialog(post),
-                    ),
-                    Text(
-                      '${post.comments.length} comments',
-                      style: TextStyle(
-                        color: Colors.brown[400],
-                        fontSize: 14,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      _formatTimestamp(post.timestamp),
-                      style: TextStyle(
-                        color: Colors.brown[400],
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-                // Show latest comment if exists
-                if (post.comments.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(8),
+    return Column(
+      children: [
+        // Follow summary section
+        FutureBuilder<List<String>>(
+          key: const ValueKey('following_section'),
+          future: FirebaseAuth.instance.currentUser != null 
+              ? FirestoreService.getFollowedUserIds(FirebaseAuth.instance.currentUser!.uid)
+                  .catchError((e) {
+                    print('DEBUG: Could not fetch follow count: $e');
+                    return <String>[];
+                  })
+              : Future.value([]),
+          builder: (context, snapshot) {
+            final followedUserIds = snapshot.data ?? [];
+            final followingCount = followedUserIds.length;
+            
+            return StatefulBuilder(
+              builder: (context, setLocalState) {
+                return GestureDetector(
+                  onTap: () {
+                    setLocalState(() {
+                      _isFollowedUsersExpanded = !_isFollowedUsersExpanded;
+                    });
+                    // Also update the main state to ensure consistency
+                    setState(() {});
+                  },
+                  child: Container(
+                    width: postWidth,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.brown.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
+                      gradient: LinearGradient(
+                        colors: [Colors.brown[50]!, Colors.brown[100]!],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: AppColors.pillShape,
+                      border: Border.all(color: Colors.brown[200]!),
                     ),
-                    child: Row(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildUserAvatar(post.comments.last.userId),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              FutureBuilder<String?>(
-                                future: appState.fetchUsername(post.comments.last.userId),
-                                builder: (context, snapshot) {
-                                  return Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.people_outline,
+                              color: Colors.brown[600],
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Following $followingCount users',
+                              style: TextStyle(
+                                color: Colors.brown[700],
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const Spacer(),
+                            if (_isFollowedUsersExpanded)
+                              Icon(
+                                Icons.keyboard_arrow_up,
+                                color: Colors.brown[600],
+                                size: 20,
+                              )
+                            else
+                              Icon(
+                                Icons.keyboard_arrow_down,
+                                color: Colors.brown[600],
+                                size: 20,
+                              ),
+                          ],
+                        ),
+                        // Show followed usernames only when expanded
+                        if (_isFollowedUsersExpanded) ...[
+                          const SizedBox(height: 16),
+                          if (followedUserIds.isEmpty)
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[100],
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                'You are not following any users yet',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 12,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            )
+                          else
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      'Following:',
+                                      style: TextStyle(
+                                        color: Colors.brown,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      '(${followedUserIds.length} total)',
+                                      style: TextStyle(
+                                        color: Colors.brown[600],
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                // Usernames list
+                                ...followedUserIds.map((userId) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 4.0),
+                                  child: Row(
                                     children: [
-                                      Text(
-                                        'Latest: ${snapshot.data ?? 'Loading...'}: ${post.comments.last.content}',
-                                        style: const TextStyle(
-                                          color: Colors.brown,
-                                          fontSize: 14,
+                                      _buildUserAvatar(userId),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          _usernames[userId] ?? 'Loading...',
+                                          style: const TextStyle(
+                                            color: Colors.brown,
+                                            fontSize: 13,
+                                          ),
                                         ),
                                       ),
-                                      // Show image if latest comment has one
-                                      if (post.comments.last.imageUrl != null) ...[
-                                        const SizedBox(height: 8),
-                                        Container(
-                                          height: 80,
-                                          width: 80,
-                                          decoration: BoxDecoration(
-                                            border: Border.all(color: Colors.grey[300]!),
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          child: ClipRRect(
-                                            borderRadius: BorderRadius.circular(8),
-                                            child: Image.network(
-                                              post.comments.last.imageUrl!,
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (context, error, stackTrace) {
-                                                return Container(
-                                                  color: Colors.grey[200],
-                                                  child: const Icon(
-                                                    Icons.error,
-                                                    color: Colors.grey,
-                                                  ),
-                                                );
-                                              },
-                                            ),
-                                          ),
-                                        ),
-                                      ],
                                     ],
-                                  );
-                                },
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _formatTimestamp(post.comments.last.timestamp),
-                                style: TextStyle(
-                                  color: Colors.brown[400],
-                                  fontSize: 12,
+                                  ),
+                                )).toList(),
+                              ],
+                            ),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
+        // Posts list
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16.0),
+            itemCount: _posts.length,
+            itemBuilder: (context, index) {
+              final post = _posts[index];
+              return Container(
+                width: postWidth,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  gradient: AppColors.inputGradient,
+                  borderRadius: AppColors.pillShape,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          _buildUserAvatar(post.userId),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Row(
+                              children: [
+                                FutureBuilder<String?>(
+                                  future: appState.fetchUsername(post.userId),
+                                  builder: (context, snapshot) {
+                                    return Text(
+                                      snapshot.data ?? 'Loading...',
+                                      style: const TextStyle(
+                                        color: Colors.brown,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    );
+                                  },
+                                ),
+                                // Show followed indicator
+                                if (post.isFollowing) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green[100],
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: Colors.green[300]!, width: 1),
+                                    ),
+                                    child: Text(
+                                      'Following',
+                                      style: TextStyle(
+                                        color: Colors.green[700],
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          // Follow button - only show if not the current user's post
+                          if (FirebaseAuth.instance.currentUser?.uid != post.userId)
+                            TextButton(
+                                  onPressed: () => _toggleFollow(post),
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                    backgroundColor: post.isFollowing 
+                                        ? Colors.grey[300] 
+                                        : Colors.brown[100],
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    post.isFollowing ? 'Following' : 'Follow',
+                                    style: TextStyle(
+                                      color: post.isFollowing 
+                                          ? Colors.grey[700] 
+                                          : Colors.brown[700],
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        post.content,
+                        style: const TextStyle(
+                          color: Colors.brown,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: Icon(
+                              post.isLiked ? Icons.favorite : Icons.favorite_border,
+                              color: post.isLiked ? Colors.red : Colors.brown[400],
+                            ),
+                            onPressed: () => _toggleLike(post),
+                          ),
+                          Text(
+                            '${post.likeCount} likes',
+                            style: TextStyle(
+                              color: Colors.brown[400],
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          IconButton(
+                            icon: Icon(
+                              Icons.comment_outlined,
+                              color: Colors.brown[400],
+                            ),
+                            onPressed: () => _showCommentDialog(post),
+                          ),
+                          Text(
+                            '${post.comments.length} comments',
+                            style: TextStyle(
+                              color: Colors.brown[400],
+                              fontSize: 14,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            _formatTimestamp(post.timestamp),
+                            style: TextStyle(
+                              color: Colors.brown[400],
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      // Show latest comment if exists
+                      if (post.comments.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.brown.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildUserAvatar(post.comments.last.userId),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    FutureBuilder<String?>(
+                                      future: appState.fetchUsername(post.comments.last.userId),
+                                      builder: (context, snapshot) {
+                                        return Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Latest: ${snapshot.data ?? 'Loading...'}: ${post.comments.last.content}',
+                                              style: const TextStyle(
+                                                color: Colors.brown,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                            // Show image if latest comment has one
+                                            if (post.comments.last.imageUrl != null) ...[
+                                              const SizedBox(height: 8),
+                                              Container(
+                                                height: 80,
+                                                width: 80,
+                                                decoration: BoxDecoration(
+                                                  border: Border.all(color: Colors.grey[300]!),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                ),
+                                                child: ClipRRect(
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  child: Image.network(
+                                                    post.comments.last.imageUrl!,
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder: (context, error, stackTrace) {
+                                                      return Container(
+                                                        color: Colors.grey[200],
+                                                        child: const Icon(
+                                                          Icons.error,
+                                                          color: Colors.grey,
+                                                        ),
+                                                      );
+                                                    },
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      _formatTimestamp(post.comments.last.timestamp),
+                                      style: TextStyle(
+                                        color: Colors.brown[400],
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
                           ),
                         ),
                       ],
-                    ),
+                    ],
                   ),
-                ],
-              ],
-            ),
+                ),
+              );
+            },
           ),
-        );
-      },
+        ),
+      ],
     );
   }
 

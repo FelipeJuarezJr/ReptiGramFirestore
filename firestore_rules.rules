@@ -101,6 +101,24 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
 
+    // Followers collection: allow authenticated users to follow/unfollow
+    match /followers/{followId} {
+      allow read: if request.auth != null;
+      
+      // Allow create if user is authenticated and creating their own follow relationship
+      allow create: if request.auth != null 
+        && request.resource.data.followerId == request.auth.uid;
+      
+      // Allow update if user is authenticated and updating their own follow relationship
+      allow update: if request.auth != null 
+        && request.auth.uid == resource.data.followerId;
+      
+      // Allow delete if user is authenticated and the followId contains their UID
+      // FollowId format is: "followerId-followedUserId"
+      allow delete: if request.auth != null 
+        && request.auth.uid == resource.data.followerId;
+    }
+
     // Chats collection: allow authenticated users to read/write their chats
     // Using permissive rules for debugging - will be tightened later
     match /chats/{chatId} {

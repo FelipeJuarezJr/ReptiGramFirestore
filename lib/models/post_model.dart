@@ -9,6 +9,7 @@ class PostModel {
   bool isLiked;
   int likeCount;
   List<CommentModel> comments;
+  bool isFollowing; // Track if current user is following the post author
 
   PostModel({
     required this.id,
@@ -19,5 +20,6 @@ class PostModel {
     this.isLiked = false,
     this.likeCount = 0,
     List<CommentModel>? comments,
+    this.isFollowing = false,
   }) : comments = comments ?? [];
 } 
