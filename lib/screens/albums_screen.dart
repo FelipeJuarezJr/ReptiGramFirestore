@@ -248,7 +248,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
     return Column(
       children: [
         const TitleHeader(),
-        const Header(initialIndex: 0),
+        const Header(initialIndex: 1),
         Expanded(
           child: Container(
             constraints: const BoxConstraints(maxWidth: 1400),
@@ -329,7 +329,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
     return Column(
       children: [
         const TitleHeader(),
-        const Header(initialIndex: 0),
+        const Header(initialIndex: 1),
         Expanded(
           child: Padding(
             padding: const EdgeInsets.all(16.0),

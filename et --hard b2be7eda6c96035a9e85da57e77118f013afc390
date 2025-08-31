@@ -1,0 +1,29 @@
+[33mcommit 2d9fcc3cff2de402cc7227a7a686da44673cd303[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m
+Author: FelipeJuarezJr <mr.felipe.juarez.jr@gmail.com>
+Date:   Sun Aug 24 12:12:38 2025 -0700
+
+    Post screen bottom navigation menu
+
+[33mcommit b2be7eda6c96035a9e85da57e77118f013afc390[m
+Author: FelipeJuarezJr <mr.felipe.juarez.jr@gmail.com>
+Date:   Sat Aug 23 21:16:03 2025 -0700
+
+    ReptiGram changed to Reptigram - lowercase
+
+[33mcommit 8829794e646e097f8c04f378d8685489088517ef[m
+Author: FelipeJuarezJr <mr.felipe.juarez.jr@gmail.com>
+Date:   Thu Aug 14 21:46:09 2025 -0700
+
+    Changed ReptiGram to Reptigram
+
+[33mcommit ea5cbacdbfda5413148f0c58ab7c352784ed4b75[m
+Author: FelipeJuarezJr <mr.felipe.juarez.jr@gmail.com>
+Date:   Thu Aug 14 20:27:50 2025 -0700
+
+    Added titles to Albums, Binders, Notebooks screens
+
+[33mcommit 5d4fcea031a4fb35e45f0d8873f7f3edf34b2b1f[m
+Author: FelipeJuarezJr <mr.felipe.juarez.jr@gmail.com>
+Date:   Thu Aug 14 18:54:43 2025 -0700
+
+    Register firebase rules changed
