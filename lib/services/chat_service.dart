@@ -36,6 +36,26 @@ class ChatService {
         });
   }
 
+  // New conversation-based methods
+  Stream<List<ChatMessage>> getMessagesByConversationId(String conversationId) {
+    print('Getting messages for conversationId: $conversationId');
+    return _db
+        .collection('conversations')
+        .doc(conversationId)
+        .collection('messages')
+        .orderBy('timestamp', descending: true)
+        .snapshots()
+        .map((snap) {
+          print('Received ${snap.docs.length} messages from Firestore for conversationId: $conversationId');
+          final messages = snap.docs.map((doc) {
+            final data = doc.data();
+            print('Message data: $data');
+            return ChatMessage.fromMap(data);
+          }).toList();
+          return messages;
+        });
+  }
+
   // Mark messages as read when user opens the chat
   Future<void> markMessagesAsRead(String currentUserId, String peerUserId) async {
     try {
@@ -128,6 +148,147 @@ class ChatService {
       print('Error sending message: $e');
       rethrow;
     }
+  }
+
+  // New conversation-based send message method
+  Future<void> sendMessageToConversation(String conversationId, String senderId, String text) async {
+    try {
+      final messageId = _uuid.v4();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      
+      final message = ChatMessage(
+        id: messageId,
+        text: text,
+        senderId: senderId,
+        timestamp: timestamp,
+        readBy: [senderId], // Sender has read their own message
+      );
+      
+      print('Sending message: conversationId=$conversationId, messageId=$messageId, text=$text');
+      print('Message data: ${message.toMap()}');
+      
+      // Send message to conversations collection
+      await _db
+          .collection('conversations')
+          .doc(conversationId)
+          .collection('messages')
+          .doc(messageId)
+          .set(message.toMap());
+
+      // Update conversation metadata
+      await _db
+          .collection('conversations')
+          .doc(conversationId)
+          .update({
+        'lastMessage': text,
+        'lastTimestamp': timestamp,
+        'lastSenderId': senderId,
+      });
+
+      print('Message sent successfully to conversation');
+      // Cloud Functions will automatically send the notification
+    } catch (e) {
+      print('Error sending message to conversation: $e');
+      rethrow;
+    }
+  }
+
+  // New conversation-based image sending method
+  Future<void> sendImageMessageToConversation(String conversationId, String senderId, Uint8List imageBytes, String fileName) async {
+    final messageId = _uuid.v4();
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    
+    // Upload image to Firebase Storage
+    final storageRef = _storage
+        .ref()
+        .child('chat_images')
+        .child(conversationId)
+        .child('$messageId.jpg');
+    
+    await storageRef.putData(imageBytes);
+    final downloadUrl = await storageRef.getDownloadURL();
+    
+    // Create message
+    final message = ChatMessage(
+      id: messageId,
+      text: 'Image',
+      senderId: senderId,
+      timestamp: timestamp,
+      fileUrl: downloadUrl,
+      messageType: MessageType.image,
+      fileName: fileName,
+      fileSize: imageBytes.length,
+      readBy: [senderId], // Sender has read their own message
+    );
+    
+    // Send message to conversations collection
+    await _db
+        .collection('conversations')
+        .doc(conversationId)
+        .collection('messages')
+        .doc(messageId)
+        .set(message.toMap());
+
+    // Update conversation metadata
+    await _db
+        .collection('conversations')
+        .doc(conversationId)
+        .update({
+      'lastMessage': '📷 Image',
+      'lastTimestamp': timestamp,
+      'lastSenderId': senderId,
+    });
+
+    // Cloud Functions will automatically send the notification
+  }
+
+  // New conversation-based file sending method
+  Future<void> sendFileMessageToConversation(String conversationId, String senderId, Uint8List fileBytes, String fileName) async {
+    final messageId = _uuid.v4();
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    
+    // Upload file to Firebase Storage
+    final storageRef = _storage
+        .ref()
+        .child('chat_files')
+        .child(conversationId)
+        .child('${messageId}_$fileName');
+    
+    await storageRef.putData(fileBytes);
+    final downloadUrl = await storageRef.getDownloadURL();
+    
+    // Create message
+    final message = ChatMessage(
+      id: messageId,
+      text: 'File',
+      senderId: senderId,
+      timestamp: timestamp,
+      fileUrl: downloadUrl,
+      messageType: MessageType.file,
+      fileName: fileName,
+      fileSize: fileBytes.length,
+      readBy: [senderId], // Sender has read their own message
+    );
+    
+    // Send message to conversations collection
+    await _db
+        .collection('conversations')
+        .doc(conversationId)
+        .collection('messages')
+        .doc(messageId)
+        .set(message.toMap());
+
+    // Update conversation metadata
+    await _db
+        .collection('conversations')
+        .doc(conversationId)
+        .update({
+      'lastMessage': '📎 $fileName',
+      'lastTimestamp': timestamp,
+      'lastSenderId': senderId,
+    });
+
+    // Cloud Functions will automatically send the notification
   }
 
   Future<void> sendImageMessage(String uid1, String uid2, Uint8List imageBytes, String fileName) async {

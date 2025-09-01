@@ -11,10 +11,18 @@ import '../styles/colors.dart';
 import '../utils/responsive_utils.dart';
 
 class ChatScreen extends StatefulWidget {
-  final String peerUid;
-  final String peerName;
+  final String? peerUid; // For backward compatibility
+  final String? peerName; // For backward compatibility
+  final String? conversationId; // New conversation-based approach
+  final String? peerNameFromConversation; // New conversation-based approach
 
-  const ChatScreen({Key? key, required this.peerUid, required this.peerName}) : super(key: key);
+  const ChatScreen({
+    Key? key, 
+    this.peerUid, 
+    this.peerName,
+    this.conversationId,
+    this.peerNameFromConversation,
+  }) : super(key: key);
 
   @override
   _ChatScreenState createState() => _ChatScreenState();
@@ -37,7 +45,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _markMessagesAsRead() async {
     try {
-      await _chatService.markMessagesAsRead(currentUser.uid, widget.peerUid);
+      if (widget.conversationId != null) {
+        // New conversation-based approach
+        // TODO: Implement mark as read for conversations
+      } else if (widget.peerUid != null) {
+        // Old approach for backward compatibility
+        await _chatService.markMessagesAsRead(currentUser.uid, widget.peerUid!);
+      }
     } catch (e) {
       print('Error marking messages as read: $e');
     }
@@ -46,8 +60,15 @@ class _ChatScreenState extends State<ChatScreen> {
   void _sendMessage() {
     final text = _controller.text.trim();
     if (text.isNotEmpty) {
-      print('Sending message from ${currentUser.uid} to ${widget.peerUid}: $text');
-      _chatService.sendMessage(currentUser.uid, widget.peerUid, text);
+      if (widget.conversationId != null) {
+        // New conversation-based approach
+        print('Sending message to conversation ${widget.conversationId}: $text');
+        _chatService.sendMessageToConversation(widget.conversationId!, currentUser.uid, text);
+      } else if (widget.peerUid != null) {
+        // Old approach for backward compatibility
+        print('Sending message from ${currentUser.uid} to ${widget.peerUid}: $text');
+        _chatService.sendMessage(currentUser.uid, widget.peerUid!, text);
+      }
       _controller.clear();
     }
   }
@@ -57,7 +78,11 @@ class _ChatScreenState extends State<ChatScreen> {
       final XFile? image = await _imagePicker.pickImage(source: ImageSource.gallery);
       if (image != null) {
         final bytes = await image.readAsBytes();
-        await _chatService.sendImageMessage(currentUser.uid, widget.peerUid, bytes, image.name);
+        if (widget.conversationId != null) {
+          await _chatService.sendImageMessageToConversation(widget.conversationId!, currentUser.uid, bytes, image.name);
+        } else if (widget.peerUid != null) {
+          await _chatService.sendImageMessage(currentUser.uid, widget.peerUid!, bytes, image.name);
+        }
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -72,7 +97,11 @@ class _ChatScreenState extends State<ChatScreen> {
       if (result != null && result.files.isNotEmpty) {
         final file = result.files.first;
         if (file.bytes != null) {
-          await _chatService.sendFileMessage(currentUser.uid, widget.peerUid, file.bytes!, file.name);
+                  if (widget.conversationId != null) {
+          await _chatService.sendFileMessageToConversation(widget.conversationId!, currentUser.uid, file.bytes!, file.name);
+        } else if (widget.peerUid != null) {
+          await _chatService.sendFileMessage(currentUser.uid, widget.peerUid!, file.bytes!, file.name);
+        }
         }
       }
     } catch (e) {
@@ -241,7 +270,7 @@ class _ChatScreenState extends State<ChatScreen> {
     
     return Scaffold(
       appBar: AppBar(
-        title: Text("Chat with ${widget.peerName}"),
+        title: Text("Chat with ${widget.peerNameFromConversation ?? widget.peerName ?? 'Unknown'}"),
         backgroundColor: AppColors.titleText,
         foregroundColor: Colors.white,
       ),
@@ -340,15 +369,15 @@ class _ChatScreenState extends State<ChatScreen> {
                         child: Row(
                           children: [
                             FutureBuilder<String?>(
-                              future: _getAvatarUrl(widget.peerUid),
+                              future: _getAvatarUrl(widget.peerUid ?? ''),
                               builder: (context, snapshot) {
                                 final avatarUrl = snapshot.data;
-                                return _buildChatAvatar(avatarUrl, widget.peerUid);
+                                return _buildChatAvatar(avatarUrl, widget.peerUid ?? '');
                               },
                             ),
                             const SizedBox(width: 12),
                             Text(
-                              widget.peerName,
+                              widget.peerNameFromConversation ?? widget.peerName ?? 'Unknown',
                               style: const TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
@@ -403,7 +432,7 @@ class _ChatScreenState extends State<ChatScreen> {
         Row(
           children: [
             FutureBuilder<String?>(
-              future: _getAvatarUrl(widget.peerUid),
+              future: _getAvatarUrl(widget.peerUid ?? ''),
               builder: (context, snapshot) {
                 final avatarUrl = snapshot.data;
                 return CircleAvatar(
@@ -420,7 +449,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    widget.peerName,
+                    widget.peerNameFromConversation ?? widget.peerName ?? 'Unknown',
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -507,7 +536,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildMessagesList() {
     return StreamBuilder<List<ChatMessage>>(
-      stream: _chatService.getMessages(currentUser.uid, widget.peerUid),
+      stream: widget.conversationId != null 
+          ? _chatService.getMessagesByConversationId(widget.conversationId!)
+          : _chatService.getMessages(currentUser.uid, widget.peerUid!),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
         final messages = snapshot.data!;

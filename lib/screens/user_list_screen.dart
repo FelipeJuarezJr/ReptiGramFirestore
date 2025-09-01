@@ -118,14 +118,30 @@ class _UserListScreenState extends State<UserListScreen> {
     
     usersWithChatData.addAll(results.where((data) => data != null).cast<ChatUserData>());
 
-    // Sort users: unread first, then by last message timestamp (newest first)
+    // Sort users: 
+    // 1. Users with conversations first (unread messages first, then by last message timestamp)
+    // 2. Users without conversations (alphabetically by name)
     usersWithChatData.sort((a, b) {
-      // First sort by unread status (unread first)
-      if (a.hasUnreadMessages != b.hasUnreadMessages) {
-        return a.hasUnreadMessages ? -1 : 1;
+      final aHasConversation = a.lastMessageTimestamp > 0;
+      final bHasConversation = b.lastMessageTimestamp > 0;
+      
+      // If one has conversation and the other doesn't, prioritize the one with conversation
+      if (aHasConversation != bHasConversation) {
+        return aHasConversation ? -1 : 1;
       }
-      // Then sort by last message timestamp (newest first)
-      return b.lastMessageTimestamp.compareTo(a.lastMessageTimestamp);
+      
+      // If both have conversations, sort by unread status first, then by timestamp
+      if (aHasConversation && bHasConversation) {
+        // First sort by unread status (unread first)
+        if (a.hasUnreadMessages != b.hasUnreadMessages) {
+          return a.hasUnreadMessages ? -1 : 1;
+        }
+        // Then sort by last message timestamp (newest first)
+        return b.lastMessageTimestamp.compareTo(a.lastMessageTimestamp);
+      }
+      
+      // If neither has conversations, sort alphabetically by name
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
     });
 
     if (mounted) {
@@ -652,7 +668,32 @@ class _UserListScreenState extends State<UserListScreen> {
     final chatId = _chatService.getChatId(currentUserId, uid);
 
     try {
-      // Get unread count and last message in parallel
+      // First check if there are any messages in this chat
+      final messagesQuery = FirebaseFirestore.instance
+          .collection('chats')
+          .doc(chatId)
+          .collection('messages')
+          .limit(1)
+          .get();
+
+      final messagesSnapshot = await messagesQuery;
+      
+      // If no messages exist, return user data without conversation info
+      if (messagesSnapshot.docs.isEmpty) {
+        return ChatUserData(
+          userDoc: userDoc,
+          name: name,
+          email: email,
+          avatarUrl: avatarUrl,
+          uid: uid,
+          lastMessage: '',
+          hasUnreadMessages: false,
+          lastMessageTimestamp: 0,
+          unreadCount: 0,
+        );
+      }
+
+      // Only fetch conversation data if messages exist
       final unreadQuery = FirebaseFirestore.instance
           .collection('chats')
           .doc(chatId)
@@ -724,7 +765,18 @@ class _UserListScreenState extends State<UserListScreen> {
       );
     } catch (e) {
       print('Error getting chat data for user $name: $e');
-      return null;
+      // Return user data without conversation info on error
+      return ChatUserData(
+        userDoc: userDoc,
+        name: name,
+        email: email,
+        avatarUrl: avatarUrl,
+        uid: uid,
+        lastMessage: '',
+        hasUnreadMessages: false,
+        lastMessageTimestamp: 0,
+        unreadCount: 0,
+      );
     }
   }
 

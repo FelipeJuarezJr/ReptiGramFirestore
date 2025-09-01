@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../screens/post_screen.dart';
 import '../screens/albums_screen.dart';
 import '../screens/user_list_screen.dart';
+import '../screens/dm_inbox_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
 import '../services/chat_service.dart';
@@ -454,13 +455,13 @@ class _NavDrawerState extends State<NavDrawer> {
           const SizedBox(height: 8),
           _buildDesktopNavItem(
             icon: Icons.message,
-            title: 'Messenger',
-            subtitle: 'Chat with other users',
+            title: 'Messages',
+            subtitle: 'Direct messages',
             onTap: () {
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const UserListScreen(),
+                  builder: (context) => const DMInboxScreen(),
                 ),
               );
             },
@@ -606,12 +607,12 @@ class _NavDrawerState extends State<NavDrawer> {
                 ),
             ],
           ),
-          title: const Text('Messenger'),
+          title: const Text('Messages'),
           onTap: () {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-                builder: (context) => const UserListScreen(),
+                builder: (context) => const DMInboxScreen(),
               ),
             );
           },
