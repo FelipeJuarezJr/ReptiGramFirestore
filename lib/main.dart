@@ -13,6 +13,8 @@ import 'state/auth_state.dart';
 import 'state/dark_mode_provider.dart';
 import 'audit_firebase_config.dart';
 import 'services/firestore_service.dart';
+import 'services/message_preload_service.dart';
+import 'services/message_cleanup_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -72,6 +74,11 @@ Future<void> main() async {
     print('❌ CRITICAL: Firebase configuration error: $e');
     print('🛑 App will continue but may write to wrong project!');
   }
+
+  // Start background services for message optimization
+  MessagePreloadService.startPreloading();
+  MessageCleanupService.startCleanup();
+  print('✅ Background message services started');
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   runApp(const MyApp());

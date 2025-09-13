@@ -18,15 +18,35 @@ class DMInboxScreen extends StatefulWidget {
 class _DMInboxScreenState extends State<DMInboxScreen> {
   final ChatService _chatService = ChatService();
   bool _isLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMoreConversations = true;
   List<ConversationData> _conversations = [];
+  DocumentSnapshot? _lastConversationDocument;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _loadConversations();
+    // Add scroll listener for infinite scroll
+    _scrollController.addListener(_onScroll);
   }
 
-  Future<void> _loadConversations() async {
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    // Check if we've scrolled near the bottom (for loading more conversations)
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      _loadMoreConversations();
+    }
+  }
+
+  Future<void> _loadConversations({bool resetPagination = true}) async {
     final currentUser = FirebaseAuth.instance.currentUser!;
     
     try {
@@ -34,54 +54,47 @@ class _DMInboxScreenState extends State<DMInboxScreen> {
         _isLoading = true;
       });
 
-      // Query conversations where the current user is a participant
-      // Temporarily removed orderBy to avoid index requirement while it's building
-      final conversationsQuery = await FirebaseFirestore.instance
-          .collection('conversations')
-          .where('participants', arrayContains: currentUser.uid)
-          .get();
+      if (resetPagination) {
+        _conversations.clear();
+        _lastConversationDocument = null;
+        _hasMoreConversations = true;
+      }
+
+      // Use paginated conversation loading
+      final conversationData = await _chatService.getConversationsPaginated(
+        currentUserId: currentUser.uid,
+        limit: 20,
+        lastDocument: _lastConversationDocument,
+      );
 
       final List<ConversationData> conversations = [];
 
-      for (final doc in conversationsQuery.docs) {
-        final data = doc.data();
-        final participants = List<String>.from(data['participants'] ?? []);
+      for (final convData in conversationData) {
+        final otherParticipantId = convData['otherParticipantId'] as String;
         
-        // Get the other participant (not the current user)
-        final otherParticipantId = participants.firstWhere(
-          (uid) => uid != currentUser.uid,
-          orElse: () => '',
-        );
+        // Get the other participant's user data
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(otherParticipantId)
+            .get();
 
-        if (otherParticipantId.isNotEmpty) {
-          // Only include conversations that have actual messages (lastTimestamp > 0)
-          final lastTimestamp = data['lastTimestamp'] ?? 0;
-          if (lastTimestamp > 0) {
-            // Get the other participant's user data
-            final userDoc = await FirebaseFirestore.instance
-                .collection('users')
-                .doc(otherParticipantId)
-                .get();
+        if (userDoc.exists) {
+          final userData = userDoc.data()!;
+          final name = userData['displayName'] ?? 
+                      userData['username'] ?? 
+                      userData['name'] ?? 
+                      'No Name';
+          final avatarUrl = userData['photoUrl'] ?? userData['photoURL'];
 
-            if (userDoc.exists) {
-              final userData = userDoc.data()!;
-              final name = userData['displayName'] ?? 
-                          userData['username'] ?? 
-                          userData['name'] ?? 
-                          'No Name';
-              final avatarUrl = userData['photoUrl'] ?? userData['photoURL'];
-
-              conversations.add(ConversationData(
-                conversationId: doc.id,
-                otherParticipantId: otherParticipantId,
-                otherParticipantName: name,
-                otherParticipantAvatar: avatarUrl,
-                lastMessage: data['lastMessage'] ?? '',
-                lastTimestamp: lastTimestamp,
-                unreadCount: data['unreadCount'] ?? 0,
-              ));
-            }
-          }
+          conversations.add(ConversationData(
+            conversationId: convData['conversationId'] as String,
+            otherParticipantId: otherParticipantId,
+            otherParticipantName: name,
+            otherParticipantAvatar: avatarUrl,
+            lastMessage: convData['lastMessage'] as String,
+            lastTimestamp: convData['lastTimestamp'] as int,
+            unreadCount: convData['unreadCount'] as int,
+          ));
         }
       }
 
@@ -90,7 +103,8 @@ class _DMInboxScreenState extends State<DMInboxScreen> {
 
       if (mounted) {
         setState(() {
-          _conversations = conversations;
+          _conversations.addAll(conversations);
+          _hasMoreConversations = conversationData.length == 20;
           _isLoading = false;
         });
       }
@@ -101,6 +115,22 @@ class _DMInboxScreenState extends State<DMInboxScreen> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  Future<void> _loadMoreConversations() async {
+    if (_isLoadingMore || !_hasMoreConversations) return;
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    await _loadConversations(resetPagination: false);
+
+    if (mounted) {
+      setState(() {
+        _isLoadingMore = false;
+      });
     }
   }
 
@@ -140,10 +170,7 @@ class _DMInboxScreenState extends State<DMInboxScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () async {
-              setState(() {
-                _isLoading = true;
-              });
-              await _loadConversations();
+              await _loadConversations(resetPagination: true);
             },
             tooltip: 'Refresh',
           ),
@@ -198,9 +225,19 @@ class _DMInboxScreenState extends State<DMInboxScreen> {
 
   Widget _buildConversationsList() {
     return ListView.builder(
+      controller: _scrollController,
       padding: const EdgeInsets.all(16),
-      itemCount: _conversations.length,
+      itemCount: _conversations.length + (_isLoadingMore ? 1 : 0),
       itemBuilder: (context, index) {
+        // Show loading indicator at the bottom when loading more conversations
+        if (index == _conversations.length && _isLoadingMore) {
+          return Container(
+            padding: const EdgeInsets.all(16),
+            child: const Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
         final conversation = _conversations[index];
         
         return Container(

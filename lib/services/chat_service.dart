@@ -36,6 +36,76 @@ class ChatService {
         });
   }
 
+  // Paginated message loading methods (backend-only, no UI changes)
+  Future<Map<String, dynamic>> getMessagesPaginated(
+    String uid1, 
+    String uid2, {
+    int limit = 50,
+    DocumentSnapshot? lastDocument,
+  }) async {
+    final chatId = getChatId(uid1, uid2);
+    print('Getting paginated messages for chatId: $chatId (limit: $limit)');
+    
+    Query query = _db
+        .collection('chats')
+        .doc(chatId)
+        .collection('messages')
+        .orderBy('timestamp', descending: true)
+        .limit(limit);
+
+    if (lastDocument != null) {
+      query = query.startAfterDocument(lastDocument);
+    }
+
+    final snapshot = await query.get();
+    print('Received ${snapshot.docs.length} paginated messages from Firestore');
+    
+    final messages = snapshot.docs.map((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      return ChatMessage.fromMap(data);
+    }).toList();
+
+    return {
+      'messages': messages,
+      'lastDocument': snapshot.docs.isNotEmpty ? snapshot.docs.last : null,
+      'hasMore': snapshot.docs.length == limit,
+    };
+  }
+
+  // Paginated conversation-based message loading
+  Future<Map<String, dynamic>> getMessagesByConversationIdPaginated(
+    String conversationId, {
+    int limit = 50,
+    DocumentSnapshot? lastDocument,
+  }) async {
+    print('Getting paginated messages for conversationId: $conversationId (limit: $limit)');
+    
+    Query query = _db
+        .collection('conversations')
+        .doc(conversationId)
+        .collection('messages')
+        .orderBy('timestamp', descending: true)
+        .limit(limit);
+
+    if (lastDocument != null) {
+      query = query.startAfterDocument(lastDocument);
+    }
+
+    final snapshot = await query.get();
+    print('Received ${snapshot.docs.length} paginated messages from Firestore');
+    
+    final messages = snapshot.docs.map((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      return ChatMessage.fromMap(data);
+    }).toList();
+
+    return {
+      'messages': messages,
+      'lastDocument': snapshot.docs.isNotEmpty ? snapshot.docs.last : null,
+      'hasMore': snapshot.docs.length == limit,
+    };
+  }
+
   // New conversation-based methods
   Stream<List<ChatMessage>> getMessagesByConversationId(String conversationId) {
     print('Getting messages for conversationId: $conversationId');
@@ -363,6 +433,61 @@ class ChatService {
         .set(message.toMap());
 
     // Cloud Functions will automatically send the notification
+  }
+
+  // Paginated conversation loading for DM Inbox
+  Future<List<Map<String, dynamic>>> getConversationsPaginated({
+    String? currentUserId,
+    int limit = 30,
+    DocumentSnapshot? lastDocument,
+  }) async {
+    if (currentUserId == null) {
+      throw Exception('Current user ID is required');
+    }
+    
+    print('Getting paginated conversations for user: $currentUserId (limit: $limit)');
+    
+    Query query = _db
+        .collection('conversations')
+        .where('participants', arrayContains: currentUserId)
+        .limit(limit);
+
+    if (lastDocument != null) {
+      query = query.startAfterDocument(lastDocument);
+    }
+
+    final snapshot = await query.get();
+    print('Received ${snapshot.docs.length} paginated conversations from Firestore');
+    
+    final conversations = <Map<String, dynamic>>[];
+    
+    for (final doc in snapshot.docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final participants = List<String>.from(data['participants'] ?? []);
+      
+      // Get the other participant (not the current user)
+      final otherParticipantId = participants.firstWhere(
+        (uid) => uid != currentUserId,
+        orElse: () => '',
+      );
+
+      if (otherParticipantId.isNotEmpty) {
+        // Only include conversations that have actual messages (lastTimestamp > 0)
+        final lastTimestamp = data['lastTimestamp'] as int? ?? 0;
+        if (lastTimestamp > 0) {
+          conversations.add({
+            'conversationId': doc.id,
+            'otherParticipantId': otherParticipantId,
+            'lastMessage': data['lastMessage'] as String? ?? '',
+            'lastTimestamp': lastTimestamp,
+            'unreadCount': data['unreadCount'] as int? ?? 0,
+            'participants': participants,
+          });
+        }
+      }
+    }
+
+    return conversations;
   }
 
 

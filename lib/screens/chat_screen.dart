@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'dart:typed_data';
 import '../models/chat_message.dart';
 import '../services/chat_service.dart';
 import '../services/firestore_service.dart';
+import '../services/message_cache_service.dart';
+import '../services/avatar_cache_service.dart';
 import '../styles/colors.dart';
 import '../utils/responsive_utils.dart';
 
@@ -35,12 +37,182 @@ class _ChatScreenState extends State<ChatScreen> {
   late final currentUser = FirebaseAuth.instance.currentUser!;
 
   final Map<String, String?> _avatarCache = {};
+  
+  // Pagination state
+  List<ChatMessage> _messages = [];
+  bool _isLoadingMessages = true;
+  bool _isLoadingMore = false;
+  bool _hasMoreMessages = true;
+  DocumentSnapshot? _lastMessageDocument;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     // Mark messages as read when opening the chat
     _markMessagesAsRead();
+    // Load initial messages with pagination
+    _loadInitialMessages();
+    // Add scroll listener for infinite scroll
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    // Check if we've scrolled near the top (for loading older messages)
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      _loadMoreMessages();
+    }
+  }
+
+  Future<void> _loadInitialMessages() async {
+    if (!mounted) return;
+    
+    setState(() {
+      _isLoadingMessages = true;
+      _messages.clear();
+      _lastMessageDocument = null;
+      _hasMoreMessages = true;
+    });
+
+    try {
+      // Try to load from cache first
+      String? cacheKey;
+      if (widget.conversationId != null) {
+        cacheKey = widget.conversationId!;
+      } else if (widget.peerUid != null) {
+        cacheKey = _chatService.getChatId(currentUser.uid, widget.peerUid!);
+      }
+
+      List<ChatMessage>? cachedMessages;
+      if (cacheKey != null) {
+        cachedMessages = await MessageCacheService.getCachedMessages(cacheKey);
+      }
+
+      // Load from server
+      Map<String, dynamic> result;
+      
+      if (widget.conversationId != null) {
+        // New conversation-based approach
+        result = await _chatService.getMessagesByConversationIdPaginated(
+          widget.conversationId!,
+          limit: 50,
+        );
+      } else if (widget.peerUid != null) {
+        // Old approach for backward compatibility
+        result = await _chatService.getMessagesPaginated(
+          currentUser.uid,
+          widget.peerUid!,
+          limit: 50,
+        );
+      } else {
+        return;
+      }
+
+      final serverMessages = List<ChatMessage>.from(result['messages']);
+
+      if (mounted) {
+        setState(() {
+          // Use server messages if available, otherwise use cached messages
+          _messages = serverMessages.isNotEmpty ? serverMessages : (cachedMessages ?? []);
+          _lastMessageDocument = result['lastDocument'];
+          _hasMoreMessages = result['hasMore'];
+          _isLoadingMessages = false;
+        });
+
+        // Cache the messages for offline access
+        if (cacheKey != null && serverMessages.isNotEmpty) {
+          await MessageCacheService.cacheMessages(cacheKey, serverMessages);
+        }
+      }
+    } catch (e) {
+      print('Error loading initial messages: $e');
+      
+      // If server fails, try to show cached messages
+      String? cacheKey;
+      if (widget.conversationId != null) {
+        cacheKey = widget.conversationId!;
+      } else if (widget.peerUid != null) {
+        cacheKey = _chatService.getChatId(currentUser.uid, widget.peerUid!);
+      }
+
+      if (cacheKey != null) {
+        final cachedMessages = await MessageCacheService.getCachedMessages(cacheKey);
+        if (mounted && cachedMessages != null) {
+          setState(() {
+            _messages = cachedMessages;
+            _isLoadingMessages = false;
+          });
+          return;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _isLoadingMessages = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadMoreMessages() async {
+    if (_isLoadingMore || !_hasMoreMessages) return;
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    try {
+      Map<String, dynamic> result;
+      
+      if (widget.conversationId != null) {
+        // New conversation-based approach
+        result = await _chatService.getMessagesByConversationIdPaginated(
+          widget.conversationId!,
+          limit: 50,
+          lastDocument: _lastMessageDocument,
+        );
+      } else if (widget.peerUid != null) {
+        // Old approach for backward compatibility
+        result = await _chatService.getMessagesPaginated(
+          currentUser.uid,
+          widget.peerUid!,
+          limit: 50,
+          lastDocument: _lastMessageDocument,
+        );
+      } else {
+        return;
+      }
+
+      final moreMessages = List<ChatMessage>.from(result['messages']);
+      
+      if (mounted && moreMessages.isNotEmpty) {
+        setState(() {
+          _messages.addAll(moreMessages);
+          _lastMessageDocument = result['lastDocument'];
+          _hasMoreMessages = result['hasMore'];
+          _isLoadingMore = false;
+        });
+      } else if (mounted) {
+        setState(() {
+          _hasMoreMessages = false;
+          _isLoadingMore = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading more messages: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingMore = false;
+        });
+      }
+    }
   }
 
   Future<void> _markMessagesAsRead() async {
@@ -60,6 +232,33 @@ class _ChatScreenState extends State<ChatScreen> {
   void _sendMessage() {
     final text = _controller.text.trim();
     if (text.isNotEmpty) {
+      // Create message object for immediate UI update
+      final newMessage = ChatMessage(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        text: text,
+        senderId: currentUser.uid,
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        readBy: [currentUser.uid],
+      );
+
+      // Add message to local list immediately for instant UI feedback
+      setState(() {
+        _messages.insert(0, newMessage);
+      });
+
+      // Cache the new message
+      String? cacheKey;
+      if (widget.conversationId != null) {
+        cacheKey = widget.conversationId!;
+      } else if (widget.peerUid != null) {
+        cacheKey = _chatService.getChatId(currentUser.uid, widget.peerUid!);
+      }
+      
+      if (cacheKey != null) {
+        MessageCacheService.addMessageToCache(cacheKey, newMessage);
+      }
+
+      // Send to server
       if (widget.conversationId != null) {
         // New conversation-based approach
         print('Sending message to conversation ${widget.conversationId}: $text');
@@ -112,16 +311,31 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<String?> _getAvatarUrl(String userId) async {
+    // Check in-memory cache first
     if (_avatarCache.containsKey(userId)) {
       return _avatarCache[userId];
+    }
+    
+    // Check persistent cache
+    final cachedUrl = await AvatarCacheService.getCachedAvatarUrl(userId);
+    if (cachedUrl != null) {
+      setState(() {
+        _avatarCache[userId] = cachedUrl;
+      });
+      return cachedUrl;
     }
     
     // Get photo URL from Firestore (includes both custom uploads and Google profile URLs)
     final url = await FirestoreService.getUserPhotoUrl(userId);
     
+    // Cache the result
     setState(() {
       _avatarCache[userId] = url;
     });
+    
+    // Cache persistently
+    await AvatarCacheService.cacheAvatarUrl(userId, url);
+    
     return url;
   }
 
@@ -535,24 +749,32 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildMessagesList() {
-    return StreamBuilder<List<ChatMessage>>(
-      stream: widget.conversationId != null 
-          ? _chatService.getMessagesByConversationId(widget.conversationId!)
-          : _chatService.getMessages(currentUser.uid, widget.peerUid!),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        final messages = snapshot.data!;
-        return ListView.builder(
-          reverse: true,
-          padding: const EdgeInsets.all(16),
-          itemCount: messages.length,
-          itemBuilder: (_, index) {
-            final msg = messages[index];
-            final isMe = msg.senderId == currentUser.uid;
-            return Row(
-              mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
+    if (_isLoadingMessages) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    return ListView.builder(
+      controller: _scrollController,
+      reverse: true,
+      padding: const EdgeInsets.all(16),
+      itemCount: _messages.length + (_isLoadingMore ? 1 : 0),
+      itemBuilder: (_, index) {
+        // Show loading indicator at the top when loading more messages
+        if (index == _messages.length && _isLoadingMore) {
+          return Container(
+            padding: const EdgeInsets.all(16),
+            child: const Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        final msg = _messages[index];
+        final isMe = msg.senderId == currentUser.uid;
+        return Row(
+          mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
                 if (!isMe)
                   FutureBuilder<String?>(
                     future: _getAvatarUrl(msg.senderId),
@@ -592,8 +814,6 @@ class _ChatScreenState extends State<ChatScreen> {
             );
           },
         );
-      },
-    );
   }
 
   Widget _buildMessageInput() {
