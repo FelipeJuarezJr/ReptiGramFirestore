@@ -137,6 +137,37 @@ class _PostScreenState extends State<PostScreen> {
     }
   }
 
+  Future<List<CommentModel>> _loadCommentsForPost(String postId) async {
+    try {
+      final commentsQuery = await FirestoreService.comments
+          .where('postId', isEqualTo: postId)
+          .get();
+      
+      final comments = commentsQuery.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        final timestamp = data['timestamp'] is Timestamp 
+            ? (data['timestamp'] as Timestamp).toDate()
+            : DateTime.fromMillisecondsSinceEpoch(data['timestamp'] ?? 0);
+        
+        return CommentModel(
+          id: doc.id,
+          userId: data['userId'] ?? '',
+          content: data['content'] ?? '',
+          timestamp: timestamp,
+          imageUrl: data['imageUrl'],
+        );
+      }).toList();
+      
+      // Sort comments by timestamp manually
+      comments.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+      
+      return comments;
+    } catch (e) {
+      print('Error loading comments for post $postId: $e');
+      return [];
+    }
+  }
+
   Future<List<PostModel>> _loadPostsPage(String userId, {required bool resetPagination}) async {
     const int pageSize = 10;
     
@@ -194,6 +225,9 @@ class _PostScreenState extends State<PostScreen> {
             ? (data['timestamp'] as Timestamp).toDate()
             : DateTime.fromMillisecondsSinceEpoch(data['timestamp'] ?? 0);
         
+        // Load comments for this post
+        final comments = await _loadCommentsForPost(postId);
+        
         final post = PostModel(
           id: postId,
           userId: postUserId,
@@ -201,7 +235,7 @@ class _PostScreenState extends State<PostScreen> {
           timestamp: postTimestamp,
           isLiked: false, // Will be updated later if needed
           likeCount: 0,   // Will be updated later if needed
-          comments: [],    // Will be updated later if needed
+          comments: comments,
           isFollowing: isFollowing,
         );
         loadedPosts.add(post);
