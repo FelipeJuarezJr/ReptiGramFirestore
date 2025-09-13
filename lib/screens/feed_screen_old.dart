@@ -11,7 +11,7 @@ import '../common/title_header.dart';
 import '../models/photo_data.dart';
 import '../state/app_state.dart';
 import '../services/firestore_service.dart';
-import '../services/like_cache_service.dart';
+import '../widgets/infinite_scroll_grid.dart';
 import 'dart:typed_data';
 import '../utils/responsive_utils.dart';
 
@@ -28,288 +28,16 @@ class FeedScreen extends StatefulWidget {
 }
 
 class _FeedScreenState extends State<FeedScreen> {
-  List<PhotoData> _photos = [];
-  bool _isLoading = false;
   final ImagePicker _picker = ImagePicker();
   XFile? _selectedCommentImage; // For comment image upload
-  final ScrollController _scrollController = ScrollController();
-  bool _isLoadingMore = false;
-  bool _hasMoreData = true;
-  DocumentSnapshot? _lastDocument;
 
   @override
   void initState() {
     super.initState();
-    _scrollController.addListener(_onScroll);
     print('FeedScreen initialized with showLikedOnly: ${widget.showLikedOnly}');
-    Future.microtask(() async {
-      final appState = Provider.of<AppState>(context, listen: false);
-      await appState.initializeUser(); // Make sure user is initialized
-      if (mounted) {
-        await _loadPhotos();
-      }
-    });
   }
 
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
 
-  void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
-      _loadMorePhotos();
-    }
-  }
-
-  @override
-  void didUpdateWidget(FeedScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.showLikedOnly != widget.showLikedOnly) {
-      print('Feed type changed, reloading photos');
-      _loadPhotos();
-    }
-  }
-
-  Future<void> _loadPhotos() async {
-    if (!mounted) return;
-
-    setState(() => _isLoading = true);
-    print('🔄 Loading photos with pagination...');
-
-    try {
-      final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
-      if (currentUser?.uid == null) {
-        print('❌ No user ID available');
-        return;
-      }
-
-      // Reset pagination state
-      _lastDocument = null;
-      _hasMoreData = true;
-
-      // Load first page of photos
-      final loadedPhotos = await _loadPhotosPage(currentUser, resetPagination: true);
-
-      if (mounted) {
-        setState(() {
-          _photos = loadedPhotos;
-          _isLoading = false;
-        });
-        print('✅ Loaded ${loadedPhotos.length} photos (Page 1)');
-        
-        // Show message if no liked photos and user is logged in
-        if (widget.showLikedOnly && loadedPhotos.isEmpty && currentUser != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('You haven\'t liked any photos yet'),
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      print('❌ Error loading photos: $e');
-      if (mounted) {
-        setState(() {
-          _photos = [];
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _loadMorePhotos() async {
-    if (_isLoadingMore || !_hasMoreData) return;
-
-    setState(() {
-      _isLoadingMore = true;
-    });
-
-    try {
-      final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
-      if (currentUser?.uid == null) return;
-
-      final newPhotos = await _loadPhotosPage(currentUser, resetPagination: false);
-      
-      if (newPhotos.isNotEmpty) {
-        setState(() {
-          _photos.addAll(newPhotos);
-        });
-        print('✅ Loaded ${newPhotos.length} more photos');
-      }
-    } catch (e) {
-      print('❌ Error loading more photos: $e');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoadingMore = false;
-        });
-      }
-    }
-  }
-
-  Future<List<PhotoData>> _loadPhotosPage(dynamic currentUser, {required bool resetPagination}) async {
-    const int pageSize = 20;
-    
-    if (resetPagination) {
-      _lastDocument = null;
-      _hasMoreData = true;
-    }
-
-    if (!_hasMoreData) return [];
-
-    try {
-      // Get photos with pagination - use simple query without complex filters
-      Query query = FirestoreService.photos
-          .orderBy('timestamp', descending: true)
-          .limit(pageSize);
-
-      if (_lastDocument != null) {
-        query = query.startAfterDocument(_lastDocument!);
-      }
-
-      final photosQuery = await query.get();
-      
-      if (photosQuery.docs.isEmpty) {
-        _hasMoreData = false;
-        return [];
-      }
-
-      _lastDocument = photosQuery.docs.last;
-      _hasMoreData = photosQuery.docs.length == pageSize;
-
-      // Phase 2: Use cached like data from photo documents (no separate queries needed!)
-      print('✅ Using cached like data - no additional Firestore queries needed');
-
-      final List<PhotoData> pagePhotos = [];
-      
-      for (var doc in photosQuery.docs) {
-        if (!mounted) return pagePhotos;
-        
-        try {
-          final data = doc.data() as Map<String, dynamic>;
-          final photoId = doc.id;
-          final userId = data['userId'] as String?;
-          
-          if (userId == null) continue;
-          
-          // Phase 2: Get cached like data from photo document
-          final likeData = LikeCacheService.getCachedLikeData(data, currentUser.uid);
-
-          final timestamp = data['timestamp'] is Timestamp 
-              ? (data['timestamp'] as Timestamp).millisecondsSinceEpoch
-              : data['timestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch;
-
-          final photo = PhotoData(
-            id: photoId,
-            file: null,
-            firebaseUrl: data['url'] ?? data['firebaseUrl'],
-            title: data['title'] ?? 'Untitled',
-            comment: data['comment'] ?? '',
-            isLiked: likeData['isLiked'] as bool,
-            userId: userId,
-            timestamp: timestamp,
-            likesCount: likeData['likesCount'] as int,
-            // Include WebP/JPEG URLs if available
-            thumbnailUrl: data['thumbnailUrl'],
-            mediumUrl: data['mediumUrl'],
-            fullUrl: data['fullUrl'],
-            thumbnailUrlJPEG: data['thumbnailUrlJPEG'],
-            mediumUrlJPEG: data['mediumUrlJPEG'],
-            fullUrlJPEG: data['fullUrlJPEG'],
-          );
-          pagePhotos.add(photo);
-        } catch (e) {
-          print('Error processing photo: $e');
-        }
-      }
-
-      // Filter liked photos if needed
-      final filteredPhotos = widget.showLikedOnly 
-          ? pagePhotos.where((photo) => photo.isLiked).toList()
-          : pagePhotos;
-
-      return filteredPhotos;
-    } catch (e) {
-      print('Error loading photos page: $e');
-      return [];
-    }
-  }
-
-  Future<void> _scanStorageForImages(
-    List<PhotoData> allPhotos,
-    Map<String, Map<String, dynamic>> firestorePhotos,
-    Map<String, Map<String, bool>> likesMap,
-    dynamic currentUser,
-  ) async {
-    try {
-      final storage = FirebaseStorage.instance;
-      
-      // Scan the photos folder
-      print('Scanning storage path: photos');
-      
-      try {
-        final photosRef = storage.ref().child('photos');
-        final result = await photosRef.listAll();
-        
-        print('Found ${result.items.length} items in photos folder');
-        
-        // Process every item in the photos folder as a photo
-        for (final item in result.items) {
-          print('Processing item in photos/: ${item.name}');
-          await _processStorageImage(
-            item,
-            allPhotos,
-            firestorePhotos,
-            likesMap,
-            currentUser,
-            'photos',
-          );
-        }
-      } catch (e) {
-        print('Error scanning photos folder: $e');
-        // Fallback: try to access known user folders
-        await _tryAccessKnownUserFolders(allPhotos, firestorePhotos, likesMap, currentUser);
-      }
-      
-      // Also scan users folder if it exists
-      try {
-        print('Scanning storage path: users');
-        final usersRef = storage.ref().child('users');
-        final usersResult = await usersRef.listAll();
-        
-        for (final userFolder in usersResult.items) {
-          if (!userFolder.name.contains('.')) {
-            try {
-              final userPhotosRef = userFolder.child('photos');
-              final userPhotosResult = await userPhotosRef.listAll();
-              
-              for (final photoItem in userPhotosResult.items) {
-                await _processStorageImage(
-                  photoItem,
-                  allPhotos,
-                  firestorePhotos,
-                  likesMap,
-                  currentUser,
-                  'users/${userFolder.name}/photos',
-                );
-              }
-            } catch (e) {
-              print('Error scanning users/${userFolder.name}/photos: $e');
-            }
-          }
-        }
-      } catch (e) {
-        print('Error scanning users folder: $e');
-      }
-      
-    } catch (e) {
-      print('Error scanning storage: $e');
-    }
-  }
 
   Future<void> _tryAccessUserFolder(
     Reference userFolder,
@@ -681,12 +409,24 @@ class _FeedScreenState extends State<FeedScreen> {
         photo.likesCount += photo.isLiked ? 1 : -1;
       });
 
-      // Phase 2: Update cached like data in photo document
-      await LikeCacheService.updatePhotoLikeCache(
-        photoId: photo.id,
-        userId: currentUser.uid,
-        isLiked: photo.isLiked,
-      );
+      // Firestore: Toggle like
+      if (photo.isLiked) {
+        await FirestoreService.likes.add({
+          'photoId': photo.id,
+          'userId': currentUser.uid,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+      } else {
+        // Find and delete the like document
+        final likeQuery = await FirestoreService.likes
+            .where('photoId', isEqualTo: photo.id)
+            .where('userId', isEqualTo: currentUser.uid)
+            .get();
+        
+        for (var doc in likeQuery.docs) {
+          await doc.reference.delete();
+        }
+      }
 
       // If we're in "Liked Only" view and the photo was unliked, remove it from the list
       if (widget.showLikedOnly && !photo.isLiked) {
@@ -849,29 +589,13 @@ class _FeedScreenState extends State<FeedScreen> {
                             ),
                           ),
                         )
-                      : RefreshIndicator(
-                          onRefresh: _loadPhotos,
-                          child: GridView.builder(
-                            controller: _scrollController,
-                            padding: const EdgeInsets.all(8.0),
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              crossAxisSpacing: 8.0,
-                              mainAxisSpacing: 8.0,
-                            ),
-                            itemCount: _photos.length + (_isLoadingMore ? 1 : 0),
-                            itemBuilder: (context, index) {
-                              if (index == _photos.length) {
-                                return const Center(
-                                  child: Padding(
-                                    padding: EdgeInsets.all(16.0),
-                                    child: CircularProgressIndicator(),
-                                  ),
-                                );
-                              }
-                              return _buildGridItem(_photos[index]);
-                            },
-                          ),
+                      : InfiniteScrollGrid(
+                          showLikedOnly: widget.showLikedOnly,
+                          crossAxisCount: 2,
+                          childAspectRatio: 1.0,
+                          crossAxisSpacing: 8.0,
+                          mainAxisSpacing: 8.0,
+                          itemBuilder: (photo) => _buildGridItem(photo),
                         ),
         ),
       ],
@@ -941,25 +665,14 @@ class _FeedScreenState extends State<FeedScreen> {
                 : RefreshIndicator(
                     onRefresh: _loadPhotos,
                     child: GridView.builder(
-                      controller: _scrollController,
                       padding: const EdgeInsets.all(8.0),
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: ResponsiveUtils.isWideScreen(context) ? 4 : 2,
                         crossAxisSpacing: 8.0,
                         mainAxisSpacing: 8.0,
                       ),
-                      itemCount: _photos.length + (_isLoadingMore ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (index == _photos.length) {
-                          return const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(16.0),
-                              child: CircularProgressIndicator(),
-                            ),
-                          );
-                        }
-                        return _buildGridItem(_photos[index]);
-                      },
+                      itemCount: _photos.length,
+                      itemBuilder: (context, index) => _buildGridItem(_photos[index]),
                     ),
                   );
   }

@@ -42,10 +42,15 @@ class _BindersScreenState extends State<BindersScreen> {
   Map<String, List<PhotoData>> binderPhotos = {};
   bool _isLoading = false;
   final Map<String, ValueNotifier<bool>> _likeNotifiers = {};
+  final ScrollController _scrollController = ScrollController();
+  bool _isLoadingMore = false;
+  bool _hasMoreData = true;
+  DocumentSnapshot? _lastDocument;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     Future.microtask(() async {
       final appState = Provider.of<AppState>(context, listen: false);
       await appState.initializeUser();
@@ -54,28 +59,115 @@ class _BindersScreenState extends State<BindersScreen> {
     });
   }
 
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      _loadMoreBinders();
+    }
+  }
+
   Future<void> _loadBinders() async {
     try {
       final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
       if (currentUser == null) return;
 
-      // Firestore: Get binders for user and album
-      final bindersQuery = await FirestoreService.binders
-          .where('userId', isEqualTo: currentUser.uid)
-          .where('albumName', isEqualTo: widget.parentAlbumName)
-          .get();
+      // Reset pagination state
+      _lastDocument = null;
+      _hasMoreData = true;
+
+      // Load first page of binders
+      final loadedBinders = await _loadBindersPage(currentUser, resetPagination: true);
 
       setState(() {
-        binders = [];
-        for (var doc in bindersQuery.docs) {
-          final data = doc.data() as Map<String, dynamic>;
-          if (data['name'] != null) {
-            binders.add(data['name']);
-          }
-        }
+        binders = loadedBinders;
       });
     } catch (e) {
       print('Error loading binders: $e');
+    }
+  }
+
+  Future<void> _loadMoreBinders() async {
+    if (_isLoadingMore || !_hasMoreData) return;
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    try {
+      final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
+      if (currentUser == null) return;
+
+      final newBinders = await _loadBindersPage(currentUser, resetPagination: false);
+      
+      if (newBinders.isNotEmpty) {
+        setState(() {
+          binders.addAll(newBinders);
+        });
+        print('✅ Loaded ${newBinders.length} more binders');
+      }
+    } catch (e) {
+      print('❌ Error loading more binders: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingMore = false;
+        });
+      }
+    }
+  }
+
+  Future<List<String>> _loadBindersPage(dynamic currentUser, {required bool resetPagination}) async {
+    const int pageSize = 20;
+    
+    if (resetPagination) {
+      _lastDocument = null;
+      _hasMoreData = true;
+    }
+
+    if (!_hasMoreData) return [];
+
+    try {
+      // Get binders with pagination - use simple query without orderBy to avoid index requirement
+      Query query = FirestoreService.binders
+          .where('userId', isEqualTo: currentUser.uid)
+          .where('albumName', isEqualTo: widget.parentAlbumName)
+          .limit(pageSize);
+
+      if (_lastDocument != null) {
+        query = query.startAfterDocument(_lastDocument!);
+      }
+
+      final bindersQuery = await query.get();
+      
+      if (bindersQuery.docs.isEmpty) {
+        _hasMoreData = false;
+        return [];
+      }
+
+      _lastDocument = bindersQuery.docs.last;
+      _hasMoreData = bindersQuery.docs.length == pageSize;
+
+      final List<String> pageBinders = [];
+      for (var doc in bindersQuery.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        if (data['name'] != null) {
+          pageBinders.add(data['name']);
+        }
+      }
+
+      // Sort locally to avoid Firestore index requirement
+      pageBinders.sort();
+
+      return pageBinders;
+    } catch (e) {
+      print('Error loading binders page: $e');
+      return [];
     }
   }
 
@@ -707,14 +799,24 @@ class _BindersScreenState extends State<BindersScreen> {
     return _isLoading && binderPhotos.isEmpty
         ? const Center(child: CircularProgressIndicator())
         : GridView.builder(
+            controller: _scrollController,
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: ResponsiveUtils.isWideScreen(context) ? 4 : 3,
               crossAxisSpacing: 8,
               mainAxisSpacing: 8,
               childAspectRatio: 0.75,
             ),
-            itemCount: binders.length + (binderPhotos['Unsorted']?.length ?? 0),
+            itemCount: binders.length + (binderPhotos['Unsorted']?.length ?? 0) + (_isLoadingMore ? 1 : 0),
             itemBuilder: (context, index) {
+              // Show loading indicator at the end
+              if (index == binders.length + (binderPhotos['Unsorted']?.length ?? 0)) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: CircularProgressIndicator(),
+                  ),
+                );
+              }
               // First show binders
               if (index < binders.length) {
                 return _buildBinderCard(binders[index]);
@@ -783,7 +885,7 @@ class _BindersScreenState extends State<BindersScreen> {
                             Expanded(
                               flex: 2,
                               child: Image.network(
-                                photos[0].firebaseUrl!,
+                                photos[0].getImageUrl(size: 'thumbnail') ?? photos[0].firebaseUrl!,
                                 fit: BoxFit.cover,
                                 width: double.infinity,
                                 errorBuilder: (context, error, stackTrace) {

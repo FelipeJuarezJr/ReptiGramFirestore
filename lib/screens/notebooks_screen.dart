@@ -17,7 +17,6 @@ import '../models/photo_data.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
 import '../constants/photo_sources.dart';
-import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:html' as html;
 import '../utils/responsive_utils.dart';
@@ -45,16 +44,34 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
   Map<String, List<PhotoData>> notebookPhotos = {};
   bool _isLoading = false;
   final Map<String, ValueNotifier<bool>> _likeNotifiers = {};
+  final ScrollController _scrollController = ScrollController();
+  bool _isLoadingMore = false;
+  bool _hasMoreData = true;
+  DocumentSnapshot? _lastDocument;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     Future.microtask(() async {
       final appState = Provider.of<AppState>(context, listen: false);
       await appState.initializeUser();
       await _loadNotebooks();
       await _loadNotebookPhotos();
     });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      _loadMoreNotebooks();
+    }
   }
 
 
@@ -64,27 +81,101 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
       final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
       if (currentUser == null) return;
       
-      // Firestore: get notebooks for user and binder (using notebooks collection)
-      final query = await FirestoreService.notebooks
-          .where('userId', isEqualTo: currentUser.uid)
-          .where('binderName', isEqualTo: widget.parentBinderName)
-          .where('albumName', isEqualTo: widget.parentAlbumName)
-          .get();
-      
+      // Reset pagination state
+      _lastDocument = null;
+      _hasMoreData = true;
+
+      // Load first page of notebooks
+      final loadedNotebooks = await _loadNotebooksPage(currentUser, resetPagination: true);
+
       setState(() {
-        notebooks = [];
-        for (var doc in query.docs) {
-          final data = doc.data() as Map<String, dynamic>;
-          if (data['name'] != null) {
-            notebooks.add(data['name']);
-          }
-        }
+        notebooks = loadedNotebooks;
       });
       
       print('📚 Loaded ${notebooks.length} notebooks for user ${currentUser.uid}');
       print('📚 Notebooks: $notebooks');
     } catch (e) {
       print('Error loading notebooks: $e');
+    }
+  }
+
+  Future<void> _loadMoreNotebooks() async {
+    if (_isLoadingMore || !_hasMoreData) return;
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    try {
+      final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
+      if (currentUser == null) return;
+
+      final newNotebooks = await _loadNotebooksPage(currentUser, resetPagination: false);
+      
+      if (newNotebooks.isNotEmpty) {
+        setState(() {
+          notebooks.addAll(newNotebooks);
+        });
+        print('✅ Loaded ${newNotebooks.length} more notebooks');
+      }
+    } catch (e) {
+      print('❌ Error loading more notebooks: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingMore = false;
+        });
+      }
+    }
+  }
+
+  Future<List<String>> _loadNotebooksPage(dynamic currentUser, {required bool resetPagination}) async {
+    const int pageSize = 20;
+    
+    if (resetPagination) {
+      _lastDocument = null;
+      _hasMoreData = true;
+    }
+
+    if (!_hasMoreData) return [];
+
+    try {
+      // Get notebooks with pagination - use simple query without orderBy to avoid index requirement
+      Query query = FirestoreService.notebooks
+          .where('userId', isEqualTo: currentUser.uid)
+          .where('binderName', isEqualTo: widget.parentBinderName)
+          .where('albumName', isEqualTo: widget.parentAlbumName)
+          .limit(pageSize);
+
+      if (_lastDocument != null) {
+        query = query.startAfterDocument(_lastDocument!);
+      }
+
+      final notebooksQuery = await query.get();
+      
+      if (notebooksQuery.docs.isEmpty) {
+        _hasMoreData = false;
+        return [];
+      }
+
+      _lastDocument = notebooksQuery.docs.last;
+      _hasMoreData = notebooksQuery.docs.length == pageSize;
+
+      final List<String> pageNotebooks = [];
+      for (var doc in notebooksQuery.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        if (data['name'] != null) {
+          pageNotebooks.add(data['name']);
+        }
+      }
+
+      // Sort locally to avoid Firestore index requirement
+      pageNotebooks.sort();
+
+      return pageNotebooks;
+    } catch (e) {
+      print('Error loading notebooks page: $e');
+      return [];
     }
   }
 
@@ -577,14 +668,24 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
     return _isLoading && notebookPhotos.isEmpty
         ? const Center(child: CircularProgressIndicator())
         : GridView.builder(
+            controller: _scrollController,
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: ResponsiveUtils.isWideScreen(context) ? 4 : 3,
               crossAxisSpacing: 8,
               mainAxisSpacing: 8,
               childAspectRatio: 0.75,
             ),
-            itemCount: notebooks.length + (notebookPhotos['Main Grid']?.length ?? 0),
+            itemCount: notebooks.length + (notebookPhotos['Main Grid']?.length ?? 0) + (_isLoadingMore ? 1 : 0),
             itemBuilder: (context, index) {
+              // Show loading indicator at the end
+              if (index == notebooks.length + (notebookPhotos['Main Grid']?.length ?? 0)) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: CircularProgressIndicator(),
+                  ),
+                );
+              }
               // First show notebooks
               if (index < notebooks.length) {
                 return _buildNotebookCard(notebooks[index]);
@@ -934,32 +1035,34 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(15),
-                child: FutureBuilder<Uint8List?>(
-                  future: _loadImageBytes(photo.firebaseUrl!),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return Container();
+                child: Image.network(
+                  photo.getImageUrl(size: 'thumbnail') ?? photo.firebaseUrl!,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: double.infinity,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) {
+                      return child;
                     }
-                    
-                    if (snapshot.hasError) {
-                      print('❌ Error loading image bytes: ${snapshot.error}');
-                      return _buildFallbackImage(photo.firebaseUrl!);
-                    }
-                    
-                    if (snapshot.hasData && snapshot.data != null) {
-                      return Image.memory(
-                        snapshot.data!,
-                fit: BoxFit.cover,
-                width: double.infinity,
-                height: double.infinity,
-                        errorBuilder: (context, error, stackTrace) {
-                          print('❌ Memory image error: $error');
-                          return _buildFallbackImage(photo.firebaseUrl!);
-                        },
-                      );
-                    }
-                    
-                    return _buildFallbackImage(photo.firebaseUrl!);
+                    return Container(
+                      color: Colors.grey[300],
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    print('❌ Network image error: $error');
+                    return Container(
+                      color: Colors.grey[300],
+                      child: const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.broken_image, color: Colors.grey),
+                            SizedBox(height: 8),
+                            Text('Image failed to load', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                    );
                   },
                 ),
               ),
@@ -1069,57 +1172,6 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
     );
   }
 
-  Widget _buildFallbackImage(String url) {
-    return Image.network(
-      url,
-      fit: BoxFit.cover,
-      width: double.infinity,
-      height: double.infinity,
-      loadingBuilder: (context, child, loadingProgress) {
-        if (loadingProgress == null) {
-          return child;
-        }
-        return Container(
-          color: Colors.grey[300],
-        );
-      },
-      errorBuilder: (context, error, stackTrace) {
-        print('❌ Network image error: $error');
-        print('🔗 Failed URL: $url');
-        return Container(
-          color: Colors.grey[300],
-          child: const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.broken_image, color: Colors.grey),
-                SizedBox(height: 8),
-                Text('Image failed to load', style: TextStyle(color: Colors.grey, fontSize: 12)),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Future<Uint8List?> _loadImageBytes(String url) async {
-    try {
-      print('🔄 Loading image bytes from: $url');
-      final response = await http.get(Uri.parse(url));
-      
-      if (response.statusCode == 200) {
-        print('✅ Image bytes loaded successfully: ${response.bodyBytes.length} bytes');
-        return response.bodyBytes;
-      } else {
-        print('❌ HTTP error: ${response.statusCode}');
-        return null;
-      }
-    } catch (e) {
-      print('❌ Error loading image bytes: $e');
-      return null;
-    }
-  }
 
   void _showEnlargedImage(PhotoData photo) {
     if (photo.id.isEmpty) {

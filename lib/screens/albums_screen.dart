@@ -15,7 +15,6 @@ import '../screens/binders_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
 import '../constants/photo_sources.dart';
-import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:html' as html;
 import '../utils/responsive_utils.dart';
@@ -33,10 +32,15 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
   Map<String, List<PhotoData>> albumPhotos = {};
   bool _isLoading = false;
   final Map<String, ValueNotifier<bool>> _likeNotifiers = {};
+  final ScrollController _scrollController = ScrollController();
+  bool _isLoadingMore = false;
+  bool _hasMoreData = true;
+  DocumentSnapshot? _lastDocument;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     Future.microtask(() async {
       final appState = Provider.of<AppState>(context, listen: false);
       await appState.initializeUser();
@@ -45,27 +49,114 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
     });
   }
 
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      _loadMoreAlbums();
+    }
+  }
+
   Future<void> _loadAlbums() async {
     try {
       final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
       if (currentUser == null) return;
 
-      // Firestore: Get albums for user
-      final albumsQuery = await FirestoreService.albums
-          .where('userId', isEqualTo: currentUser.uid)
-          .get();
+      // Reset pagination state
+      _lastDocument = null;
+      _hasMoreData = true;
+
+      // Load first page of albums
+      final loadedAlbums = await _loadAlbumsPage(currentUser, resetPagination: true);
 
       setState(() {
-        albums = [];
-        for (var doc in albumsQuery.docs) {
-          final data = doc.data() as Map<String, dynamic>;
-          if (data['name'] != null) {
-            albums.add(data['name']);
-          }
-        }
+        albums = loadedAlbums;
       });
     } catch (e) {
       print('Error loading albums: $e');
+    }
+  }
+
+  Future<void> _loadMoreAlbums() async {
+    if (_isLoadingMore || !_hasMoreData) return;
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    try {
+      final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
+      if (currentUser == null) return;
+
+      final newAlbums = await _loadAlbumsPage(currentUser, resetPagination: false);
+      
+      if (newAlbums.isNotEmpty) {
+        setState(() {
+          albums.addAll(newAlbums);
+        });
+        print('✅ Loaded ${newAlbums.length} more albums');
+      }
+    } catch (e) {
+      print('❌ Error loading more albums: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingMore = false;
+        });
+      }
+    }
+  }
+
+  Future<List<String>> _loadAlbumsPage(dynamic currentUser, {required bool resetPagination}) async {
+    const int pageSize = 20;
+    
+    if (resetPagination) {
+      _lastDocument = null;
+      _hasMoreData = true;
+    }
+
+    if (!_hasMoreData) return [];
+
+    try {
+      // Get albums with pagination - use simple query without orderBy to avoid index requirement
+      Query query = FirestoreService.albums
+          .where('userId', isEqualTo: currentUser.uid)
+          .limit(pageSize);
+
+      if (_lastDocument != null) {
+        query = query.startAfterDocument(_lastDocument!);
+      }
+
+      final albumsQuery = await query.get();
+      
+      if (albumsQuery.docs.isEmpty) {
+        _hasMoreData = false;
+        return [];
+      }
+
+      _lastDocument = albumsQuery.docs.last;
+      _hasMoreData = albumsQuery.docs.length == pageSize;
+
+      final List<String> pageAlbums = [];
+      for (var doc in albumsQuery.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        if (data['name'] != null) {
+          pageAlbums.add(data['name']);
+        }
+      }
+
+      // Sort locally to avoid Firestore index requirement
+      pageAlbums.sort();
+
+      return pageAlbums;
+    } catch (e) {
+      print('Error loading albums page: $e');
+      return [];
     }
   }
 
@@ -555,14 +646,24 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
     return _isLoading && albumPhotos.isEmpty
         ? const Center(child: CircularProgressIndicator())
         : GridView.builder(
+            controller: _scrollController,
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: ResponsiveUtils.isWideScreen(context) ? 4 : 3,
               crossAxisSpacing: 8,
               mainAxisSpacing: 8,
               childAspectRatio: 0.75,
             ),
-            itemCount: albums.length + (albumPhotos['Main Grid']?.length ?? 0),
+            itemCount: albums.length + (albumPhotos['Main Grid']?.length ?? 0) + (_isLoadingMore ? 1 : 0),
             itemBuilder: (context, index) {
+              // Show loading indicator at the end
+              if (index == albums.length + (albumPhotos['Main Grid']?.length ?? 0)) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: CircularProgressIndicator(),
+                  ),
+                );
+              }
               // First show albums
               if (index < albums.length) {
                 return _buildAlbumCard(albums[index]);
@@ -629,7 +730,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                             Expanded(
                               flex: 2,
                               child: Image.network(
-                                photos[0].firebaseUrl!,
+                                photos[0].getImageUrl(size: 'thumbnail') ?? photos[0].firebaseUrl!,
                                 fit: BoxFit.cover,
                                 width: double.infinity,
                                 errorBuilder: (context, error, stackTrace) {
@@ -1256,32 +1357,34 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(15),
-                child: FutureBuilder<Uint8List?>(
-                  future: _loadImageBytes(photo.firebaseUrl!),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return Container();
+                child: Image.network(
+                  photo.getImageUrl(size: 'thumbnail') ?? photo.firebaseUrl!,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: double.infinity,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) {
+                      return child;
                     }
-                    
-                    if (snapshot.hasError) {
-                      print('❌ Error loading image bytes: ${snapshot.error}');
-                      return _buildFallbackImage(photo.firebaseUrl!);
-                    }
-                    
-                    if (snapshot.hasData && snapshot.data != null) {
-                      return Image.memory(
-                        snapshot.data!,
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        height: double.infinity,
-                        errorBuilder: (context, error, stackTrace) {
-                          print('❌ Memory image error: $error');
-                          return _buildFallbackImage(photo.firebaseUrl!);
-                        },
-                      );
-                    }
-                    
-                    return _buildFallbackImage(photo.firebaseUrl!);
+                    return Container(
+                      color: Colors.grey[300],
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    print('❌ Network image error: $error');
+                    return Container(
+                      color: Colors.grey[300],
+                      child: const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.broken_image, color: Colors.grey),
+                            SizedBox(height: 8),
+                            Text('Image failed to load', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                    );
                   },
                 ),
               ),
@@ -1393,37 +1496,6 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
     );
   }
 
-  Future<Uint8List?> _loadImageBytes(String imageUrl) async {
-    try {
-      print('🔄 Loading image bytes from: $imageUrl');
-      final response = await http.get(Uri.parse(imageUrl));
-      if (response.statusCode == 200) {
-        print('✅ Image bytes loaded successfully: ${response.bodyBytes.length} bytes');
-        return response.bodyBytes;
-      } else {
-        print('❌ Failed to load image: ${response.statusCode}');
-        return null;
-      }
-    } catch (e) {
-      print('❌ Error loading image bytes: $e');
-      return null;
-    }
-  }
-
-  Widget _buildFallbackImage(String imageUrl) {
-    return Image.network(
-      imageUrl,
-      fit: BoxFit.cover,
-      width: double.infinity,
-      height: double.infinity,
-      errorBuilder: (context, error, stackTrace) {
-        return Container(
-          color: Colors.grey[300],
-          child: const Icon(Icons.broken_image, color: Colors.grey),
-        );
-      },
-    );
-  }
 
   void _showEnlargedImage(PhotoData photo) {
     if (photo.id.isEmpty) {

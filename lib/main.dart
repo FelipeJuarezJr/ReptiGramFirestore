@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'screens/login_screen.dart';
 import 'screens/chat_screen.dart';
@@ -47,6 +48,21 @@ Future<void> main() async {
       print('✅ Firebase initialized in Dart (fallback)');
     }
   }
+
+  // Phase 3: Configure Firestore with offline persistence and optimization
+  try {
+    await FirebaseFirestore.instance.enablePersistence();
+    print('✅ Firestore offline persistence enabled');
+  } catch (e) {
+    print('⚠️ Offline persistence already enabled or not supported: $e');
+  }
+
+  // Configure Firestore settings for optimization
+  FirebaseFirestore.instance.settings = const Settings(
+    persistenceEnabled: true,
+    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+  );
+  print('✅ Firestore settings optimized for offline caching');
 
   // 🔍 AUDIT: Verify Firebase configuration on startup
   try {

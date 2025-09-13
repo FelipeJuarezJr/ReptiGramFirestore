@@ -12,6 +12,7 @@ import '../state/app_state.dart';
 import '../models/photo_data.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
+import '../services/like_cache_service.dart';
 import '../constants/photo_sources.dart';
 import '../utils/responsive_utils.dart';
 
@@ -37,14 +38,32 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
   final ImagePicker _picker = ImagePicker();
   final FirebaseStorage _storage = FirebaseStorage.instance;
   final Map<String, ValueNotifier<bool>> _likeNotifiers = {};
+  final ScrollController _scrollController = ScrollController();
+  bool _isLoadingMore = false;
+  bool _hasMoreData = true;
+  DocumentSnapshot? _lastDocument;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     // Use addPostFrameCallback to avoid setState during build
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadPhotos();
     });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      _loadMorePhotos();
+    }
   }
 
   Future<void> _loadPhotos() async {
@@ -57,52 +76,14 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) return;
 
-      // Get all likes from Firestore
-      final likesQuery = await FirestoreService.likes.get();
-      final likesMap = <String, Map<String, bool>>{};
-      for (var doc in likesQuery.docs) {
-        final data = doc.data() as Map<String, dynamic>;
-        final photoId = data['photoId'] as String?;
-        final userId = data['userId'] as String?;
-        if (photoId != null && userId != null) {
-          likesMap[photoId] ??= {};
-          likesMap[photoId]![userId] = true;
-        }
-      }
+      // Reset pagination state
+      _lastDocument = null;
+      _hasMoreData = true;
 
-      // Firestore: Get photos for this specific notebook
-      final photosQuery = await FirestoreService.photos
-          .where('userId', isEqualTo: currentUser.uid)
-          .where('source', isEqualTo: widget.source)
-          .where('notebookName', isEqualTo: widget.notebookName)
-          .where('binderName', isEqualTo: widget.parentBinderName)
-          .where('albumName', isEqualTo: widget.parentAlbumName)
-          .get();
+      // Load first page of photos
+      final loadedPhotos = await _loadPhotosPage(currentUser, resetPagination: true);
 
-      final List<PhotoData> photos = [];
-
-      for (var doc in photosQuery.docs) {
-        final data = doc.data() as Map<String, dynamic>;
-        final photoLikes = likesMap[doc.id] ?? {};
-        final isLiked = currentUser != null && photoLikes[currentUser.uid] == true;
-        
-        final photo = PhotoData(
-          id: doc.id,
-          file: null,
-          firebaseUrl: data['url'],
-          title: data['title'] ?? 'Photo Details',
-          comment: data['comment'] ?? '',
-          userId: currentUser.uid,
-          isLiked: isLiked,
-          likesCount: photoLikes.length,
-        );
-        
-        // Create a ValueNotifier for this photo's like status
-        _likeNotifiers[photo.id] = ValueNotifier<bool>(isLiked);
-        photos.add(photo);
-      }
-
-      appState.setPhotos(photos);
+      appState.setPhotos(loadedPhotos);
     } catch (e) {
       if (mounted) {
         appState.setError(e.toString());
@@ -111,6 +92,124 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
       if (mounted) {
         appState.setLoading(false);
       }
+    }
+  }
+
+  Future<void> _loadMorePhotos() async {
+    if (_isLoadingMore || !_hasMoreData) return;
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) return;
+
+      final newPhotos = await _loadPhotosPage(currentUser, resetPagination: false);
+      
+      if (newPhotos.isNotEmpty) {
+        final appState = Provider.of<AppState>(context, listen: false);
+        final currentPhotos = List<PhotoData>.from(appState.photos);
+        currentPhotos.addAll(newPhotos);
+        appState.setPhotos(currentPhotos);
+        print('✅ Loaded ${newPhotos.length} more photos');
+      }
+    } catch (e) {
+      print('❌ Error loading more photos: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingMore = false;
+        });
+      }
+    }
+  }
+
+  Future<List<PhotoData>> _loadPhotosPage(dynamic currentUser, {required bool resetPagination}) async {
+    const int pageSize = 20;
+    
+    if (resetPagination) {
+      _lastDocument = null;
+      _hasMoreData = true;
+    }
+
+    if (!_hasMoreData) return [];
+
+    try {
+      // Get photos with pagination - use simple query without orderBy to avoid index requirement
+      Query query = FirestoreService.photos
+          .where('userId', isEqualTo: currentUser.uid)
+          .where('source', isEqualTo: widget.source)
+          .where('notebookName', isEqualTo: widget.notebookName)
+          .where('binderName', isEqualTo: widget.parentBinderName)
+          .where('albumName', isEqualTo: widget.parentAlbumName)
+          .limit(pageSize);
+
+      if (_lastDocument != null) {
+        query = query.startAfterDocument(_lastDocument!);
+      }
+
+      final photosQuery = await query.get();
+      
+      if (photosQuery.docs.isEmpty) {
+        _hasMoreData = false;
+        return [];
+      }
+
+      _lastDocument = photosQuery.docs.last;
+      _hasMoreData = photosQuery.docs.length == pageSize;
+
+      // Phase 2: Use cached like data from photo documents (no separate queries needed!)
+      print('✅ Using cached like data - no additional Firestore queries needed');
+
+      final List<PhotoData> pagePhotos = [];
+
+      for (var doc in photosQuery.docs) {
+        if (!mounted) return pagePhotos;
+        
+        try {
+          final data = doc.data() as Map<String, dynamic>;
+          
+          // Phase 2: Get cached like data from photo document
+          final likeData = LikeCacheService.getCachedLikeData(data, currentUser.uid);
+          
+          final photo = PhotoData(
+            id: doc.id,
+            file: null,
+            firebaseUrl: data['url'],
+            title: data['title'] ?? 'Photo Details',
+            comment: data['comment'] ?? '',
+            userId: currentUser.uid,
+            isLiked: likeData['isLiked'] as bool,
+            likesCount: likeData['likesCount'] as int,
+            // Include WebP/JPEG URLs if available
+            thumbnailUrl: data['thumbnailUrl'],
+            mediumUrl: data['mediumUrl'],
+            fullUrl: data['fullUrl'],
+            thumbnailUrlJPEG: data['thumbnailUrlJPEG'],
+            mediumUrlJPEG: data['mediumUrlJPEG'],
+            fullUrlJPEG: data['fullUrlJPEG'],
+            // Phase 2: Include cached like data
+            recentLikers: likeData['recentLikers'] as List<String>?,
+            likesMap: likeData['likesMap'] as Map<String, bool>?,
+          );
+          
+          // Create a ValueNotifier for this photo's like status
+          _likeNotifiers[photo.id] = ValueNotifier<bool>(likeData['isLiked'] as bool);
+          pagePhotos.add(photo);
+        } catch (e) {
+          print('Error processing photo: $e');
+        }
+      }
+
+      // Sort locally by timestamp (newest first) to avoid Firestore index requirement
+      pagePhotos.sort((a, b) => (b.timestamp ?? 0).compareTo(a.timestamp ?? 0));
+
+      return pagePhotos;
+    } catch (e) {
+      print('Error loading photos page: $e');
+      return [];
     }
   }
 
@@ -458,13 +557,22 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
                 ),
               )
             : GridView.builder(
+                controller: _scrollController,
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: ResponsiveUtils.isWideScreen(context) ? 4 : 2,
                   crossAxisSpacing: 16,
                   mainAxisSpacing: 16,
                 ),
-                itemCount: appState.photos.length,
+                itemCount: appState.photos.length + (_isLoadingMore ? 1 : 0),
                 itemBuilder: (context, index) {
+                  if (index == appState.photos.length) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: CircularProgressIndicator(),
+                      ),
+                    );
+                  }
                   return _buildPhotoCard(appState.photos[index]);
                 },
               );

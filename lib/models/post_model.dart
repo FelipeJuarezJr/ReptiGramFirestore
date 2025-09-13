@@ -10,6 +10,9 @@ class PostModel {
   int likeCount;
   List<CommentModel> comments;
   bool isFollowing; // Track if current user is following the post author
+  final String title; // Post title
+  final String authorName; // Author display name
+  final int likesCount; // Number of likes
 
   PostModel({
     required this.id,
@@ -21,5 +24,8 @@ class PostModel {
     this.likeCount = 0,
     List<CommentModel>? comments,
     this.isFollowing = false,
+    this.title = 'Untitled Post',
+    this.authorName = 'Unknown User',
+    this.likesCount = 0,
   }) : comments = comments ?? [];
 } 

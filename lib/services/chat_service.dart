@@ -9,7 +9,7 @@ class ChatService {
   final FirebaseStorage _storage = FirebaseStorage.instance;
   final _uuid = const Uuid();
 
-  const ChatService();
+  ChatService();
 
   String getChatId(String uid1, String uid2) {
     final ids = [uid1, uid2]..sort();
