@@ -162,10 +162,19 @@ class _FeedScreenState extends State<FeedScreen> {
     if (!_hasMoreData) return [];
 
     try {
-      // Get photos with pagination - use simple query without complex filters
-      Query query = FirestoreService.photos
-          .orderBy('timestamp', descending: true)
-          .limit(pageSize);
+      // Get photos with pagination - different queries for main vs liked feed
+      Query query;
+      if (widget.showLikedOnly) {
+        // For liked feed: only get current user's photos (no orderBy to avoid index requirement)
+        query = FirestoreService.photos
+            .where('userId', isEqualTo: currentUser.uid)
+            .limit(pageSize);
+      } else {
+        // For main feed: show all users' photos
+        query = FirestoreService.photos
+            .orderBy('timestamp', descending: true)
+            .limit(pageSize);
+      }
 
       if (_lastDocument != null) {
         query = query.startAfterDocument(_lastDocument!);
@@ -227,10 +236,15 @@ class _FeedScreenState extends State<FeedScreen> {
         }
       }
 
-      // Filter liked photos if needed
+      // Filter liked photos if needed (only for liked feed)
       final filteredPhotos = widget.showLikedOnly 
           ? pagePhotos.where((photo) => photo.isLiked).toList()
           : pagePhotos;
+
+      // Sort locally by timestamp (newest first) for liked feed since we removed orderBy
+      if (widget.showLikedOnly) {
+        filteredPhotos.sort((a, b) => (b.timestamp ?? 0).compareTo(a.timestamp ?? 0));
+      }
 
       return filteredPhotos;
     } catch (e) {

@@ -18,6 +18,7 @@ import '../constants/photo_sources.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:html' as html;
 import '../utils/responsive_utils.dart';
+import '../widgets/move_photo_dialog.dart';
 
 class AlbumsScreen extends StatefulWidget {
   const AlbumsScreen({super.key});
@@ -1171,6 +1172,16 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
         PopupMenuItem(
           child: const Row(
             children: [
+              Icon(Icons.move_to_inbox, color: Colors.blue),
+              SizedBox(width: 8),
+              Text('Move Photo'),
+            ],
+          ),
+          onTap: () => _movePhoto(photo),
+        ),
+        PopupMenuItem(
+          child: const Row(
+            children: [
               Icon(Icons.delete, color: Colors.red),
               SizedBox(width: 8),
               Text('Delete Photo'),
@@ -1290,6 +1301,31 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
           SnackBar(content: Text('Failed to delete photo: ${e.toString()}')),
         );
       }
+    }
+  }
+
+  Future<void> _movePhoto(PhotoData photo) async {
+    // Get current photo location from the photo data
+    // For albums screen, photos are typically in the main albums grid
+    final currentAlbumName = 'Unsorted'; // Photos in albums screen are unsorted by default
+    
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return MovePhotoDialog(
+          photo: photo,
+          currentAlbumName: currentAlbumName,
+          currentBinderName: null,
+          currentNotebookName: null,
+          sourceContext: 'albums',
+        );
+      },
+    );
+    
+    // If photo was moved successfully, refresh the data
+    if (result == true) {
+      await _loadAlbums();
+      await _loadAlbumPhotos();
     }
   }
 
@@ -1469,12 +1505,25 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                     icon: const Icon(Icons.more_vert, color: Colors.white, size: 20),
                     onSelected: (value) {
                       switch (value) {
+                        case 'move':
+                          _movePhoto(photo);
+                          break;
                         case 'delete':
                           _deletePhoto(photo);
                           break;
                       }
                     },
                     itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'move',
+                        child: Row(
+                          children: [
+                            Icon(Icons.move_to_inbox, color: Colors.blue),
+                            SizedBox(width: 8),
+                            Text('Move Photo'),
+                          ],
+                        ),
+                      ),
                       const PopupMenuItem(
                         value: 'delete',
                         child: Row(

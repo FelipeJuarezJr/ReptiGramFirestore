@@ -20,6 +20,7 @@ import '../constants/photo_sources.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:html' as html;
 import '../utils/responsive_utils.dart';
+import '../widgets/move_photo_dialog.dart';
 
 class NotebooksScreen extends StatefulWidget {
   final String notebookName;
@@ -1145,12 +1146,25 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
                     icon: const Icon(Icons.more_vert, color: Colors.white, size: 20),
                     onSelected: (value) {
                       switch (value) {
+                        case 'move':
+                          _movePhoto(photo);
+                          break;
                         case 'delete':
                           _deletePhoto(photo);
                           break;
                       }
                     },
                     itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'move',
+                        child: Row(
+                          children: [
+                            Icon(Icons.move_to_inbox, color: Colors.blue),
+                            SizedBox(width: 8),
+                            Text('Move Photo'),
+                          ],
+                        ),
+                      ),
                       const PopupMenuItem(
                         value: 'delete',
                         child: Row(
@@ -1903,6 +1917,16 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
         PopupMenuItem(
           child: const Row(
             children: [
+              Icon(Icons.move_to_inbox, color: Colors.blue),
+              SizedBox(width: 8),
+              Text('Move Photo'),
+            ],
+          ),
+          onTap: () => _movePhoto(photo),
+        ),
+        PopupMenuItem(
+          child: const Row(
+            children: [
               Icon(Icons.delete, color: Colors.red),
               SizedBox(width: 8),
               Text('Delete Photo'),
@@ -2022,6 +2046,28 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
           SnackBar(content: Text('Failed to delete photo: ${e.toString()}')),
         );
       }
+    }
+  }
+
+  Future<void> _movePhoto(PhotoData photo) async {
+    // For notebooks_screen, we need to get the current context from the widget properties
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return MovePhotoDialog(
+          photo: photo,
+          currentAlbumName: widget.parentAlbumName ?? 'Unsorted',
+          currentBinderName: widget.parentBinderName,
+          currentNotebookName: widget.notebookName,
+          sourceContext: 'notebooks',
+        );
+      },
+    );
+    
+    // If photo was moved successfully, refresh the data
+    if (result == true) {
+      await _loadNotebooks();
+      await _loadNotebookPhotos();
     }
   }
 } 

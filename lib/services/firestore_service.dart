@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_model.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:typed_data';
+import '../constants/photo_sources.dart';
 
 class FirestoreService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -111,6 +112,43 @@ class FirestoreService {
 
   static Future<void> deletePhoto(String photoId) async {
     await photos.doc(photoId).delete();
+  }
+
+  static Future<void> movePhoto(String photoId, String albumName, String? binderName, String? notebookName) async {
+    final updates = <String, dynamic>{
+      'albumName': albumName,
+    };
+    
+    // Only update binderName if provided, otherwise keep existing value
+    if (binderName != null) {
+      updates['binderName'] = binderName;
+    } else {
+      // Only delete binderName if we're moving to a location that shouldn't have a binder
+      updates['binderName'] = FieldValue.delete();
+    }
+    
+    // Only update notebookName if provided, otherwise keep existing value
+    if (notebookName != null) {
+      updates['notebookName'] = notebookName;
+    } else {
+      // Only delete notebookName if we're moving to a location that shouldn't have a notebook
+      updates['notebookName'] = FieldValue.delete();
+    }
+    
+    // Update source based on destination
+    if (albumName == 'Photos Only') {
+      updates['source'] = PhotoSources.photosOnly;
+    } else if (notebookName != null && notebookName != 'Unsorted') {
+      // If moving to a specific notebook (not unsorted), it's for Photos Only screen
+      updates['source'] = PhotoSources.photosOnly;
+    } else if (binderName != null) {
+      updates['source'] = PhotoSources.binders;
+    } else {
+      updates['source'] = PhotoSources.albums;
+    }
+    
+    // Preserve all other photo data (likes, title, comment, etc.) by only updating location fields
+    await photos.doc(photoId).update(updates);
   }
 
   static Stream<QuerySnapshot> getPhotosStream() {
