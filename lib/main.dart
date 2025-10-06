@@ -8,6 +8,7 @@ import 'firebase_options.dart';
 import 'screens/login_screen.dart';
 import 'screens/chat_screen.dart';
 import 'screens/post_screen.dart';
+import 'screens/home_dashboard_screen.dart';
 import 'state/app_state.dart';
 import 'state/auth_state.dart';
 import 'state/dark_mode_provider.dart';
@@ -43,7 +44,7 @@ Future<void> main() async {
       Firebase.app();
       print('✅ Firebase already initialized in HTML');
     } catch (e) {
-      // Silently initialize Firebase as fallback
+      // Initialize Firebase as fallback with proper error handling
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
@@ -51,20 +52,8 @@ Future<void> main() async {
     }
   }
 
-  // Phase 3: Configure Firestore with offline persistence and optimization
-  try {
-    await FirebaseFirestore.instance.enablePersistence();
-    print('✅ Firestore offline persistence enabled');
-  } catch (e) {
-    print('⚠️ Offline persistence already enabled or not supported: $e');
-  }
-
-  // Configure Firestore settings for optimization
-  FirebaseFirestore.instance.settings = const Settings(
-    persistenceEnabled: true,
-    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
-  );
-  print('✅ Firestore settings optimized for offline caching');
+  // Phase 3: Configure Firestore (let HTML initialization handle it)
+  print('✅ Using Firestore configuration from HTML initialization');
 
   // 🔍 AUDIT: Verify Firebase configuration on startup
   try {
@@ -146,9 +135,11 @@ class _MyAppState extends State<MyApp> {
       if (token != null) {
         print('🔑 FCM Token generated: ${token.substring(0, 20)}...');
         
-        // Save token to Firestore when user is logged in
+        // Save token to Firestore when user is logged in (simplified approach)
         FirebaseAuth.instance.authStateChanges().listen((User? user) async {
           if (user != null) {
+            // Add delay to ensure Firestore is fully ready
+            await Future.delayed(const Duration(seconds: 2));
             try {
               await FirestoreService.saveFcmToken(user.uid, token!);
               print('✅ FCM Token saved to Firestore for user: ${user.uid}');
@@ -161,11 +152,13 @@ class _MyAppState extends State<MyApp> {
         print('❌ Failed to get FCM token');
       }
 
-      // Listen for token refresh
+      // Listen for token refresh with proper error handling
       messaging.onTokenRefresh.listen((newToken) async {
         print('🔄 FCM Token refreshed: ${newToken.substring(0, 20)}...');
         final user = FirebaseAuth.instance.currentUser;
         if (user != null) {
+          // Add delay to ensure Firestore is ready
+          await Future.delayed(const Duration(seconds: 2));
           try {
             await FirestoreService.saveFcmToken(user.uid, newToken);
             print('✅ Refreshed FCM token saved to Firestore');
@@ -255,7 +248,7 @@ class _MyAppState extends State<MyApp> {
             print('🚀 Navigating to main screen...');
             Navigator.of(_navigatorKey.currentContext!).pushReplacement(
               MaterialPageRoute(
-                builder: (context) => const PostScreen(shouldLoadPosts: true),
+                builder: (context) => const HomeDashboardScreen(isCurrentUser: true),
               ),
             );
           } else {
@@ -401,7 +394,7 @@ class _MyAppState extends State<MyApp> {
             if (mounted && _navigatorKey.currentContext != null) {
               Navigator.of(_navigatorKey.currentContext!).pushReplacement(
                 MaterialPageRoute(
-                  builder: (context) => const PostScreen(shouldLoadPosts: true),
+                  builder: (context) => const HomeDashboardScreen(isCurrentUser: true),
                 ),
               );
             }

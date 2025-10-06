@@ -9,7 +9,7 @@ import '../state/app_state.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data';
 import 'package:url_launcher/url_launcher.dart';
-import '../screens/post_screen.dart';
+import '../screens/home_dashboard_screen.dart';
 import '../screens/albums_screen.dart';
 import '../screens/user_list_screen.dart';
 import '../screens/dm_inbox_screen.dart';
@@ -45,6 +45,27 @@ class _NavDrawerState extends State<NavDrawer> {
   void initState() {
     super.initState();
     _loadUserPhoto();
+    
+    // Listen to AppState changes to update profile picture when it changes elsewhere
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final appState = Provider.of<AppState>(context, listen: false);
+      appState.addListener(_onAppStateChanged);
+    });
+  }
+
+  @override
+  void dispose() {
+    // Remove listener to prevent memory leaks
+    final appState = Provider.of<AppState>(context, listen: false);
+    appState.removeListener(_onAppStateChanged);
+    super.dispose();
+  }
+
+  void _onAppStateChanged() {
+    // Refresh profile picture when AppState changes (profile pictures updated elsewhere)
+    if (mounted) {
+      _loadUserPhoto();
+    }
   }
 
   Future<void> _uploadImage(Uint8List imageBytes) async {
@@ -83,6 +104,10 @@ class _NavDrawerState extends State<NavDrawer> {
         _selectedImageBytes = imageBytes;
         _photoUrl = updatedUser?.photoURL;
       });
+
+      // Notify AppState to update profile picture across the app
+      final appState = Provider.of<AppState>(context, listen: false);
+      appState.updateProfilePicture(user.uid, downloadUrl);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -127,8 +152,25 @@ class _NavDrawerState extends State<NavDrawer> {
   Future<void> _loadUserPhoto() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      // First try to get photo from Firestore (custom uploads)
+      // First check AppState for cached profile picture
+      final appState = Provider.of<AppState>(context, listen: false);
+      final cachedUrl = appState.getProfilePicture(user.uid);
+      
+      if (cachedUrl != null) {
+        if (mounted) {
+          setState(() {
+            _photoUrl = cachedUrl;
+          });
+        }
+        return;
+      }
+      
+      // If not in AppState cache, get from Firestore
       final photoUrl = await FirestoreService.getUserPhotoUrl(user.uid);
+      
+      // Cache in AppState for future use
+      appState.updateProfilePicture(user.uid, photoUrl);
+      
       if (mounted) {
         setState(() {
           // Prioritize Firestore photoUrl over Firebase Auth photoURL
@@ -433,7 +475,7 @@ class _NavDrawerState extends State<NavDrawer> {
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const PostScreen(),
+                  builder: (context) => const HomeDashboardScreen(isCurrentUser: true),
                 ),
               );
             },
@@ -550,7 +592,7 @@ class _NavDrawerState extends State<NavDrawer> {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-                builder: (context) => const PostScreen(),
+                builder: (context) => const HomeDashboardScreen(),
               ),
             );
           },

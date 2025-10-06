@@ -62,7 +62,13 @@ class _UserSearchScreenState extends State<UserSearchScreen> {
                     userData['username'] ?? 
                     userData['name'] ?? 
                     'No Name';
-        final avatarUrl = userData['photoUrl'] ?? userData['photoURL'];
+        
+        // Get photo URL, but treat asset paths as no photo
+        final photoUrl = userData['photoUrl'] ?? userData['photoURL'];
+        final avatarUrl = (photoUrl != null && photoUrl.startsWith('http')) 
+            ? photoUrl 
+            : null; // Treat asset paths and null as no photo
+        
         final email = userData['email'] ?? '';
 
         suggested.add(UserSearchData(
@@ -126,7 +132,11 @@ class _UserSearchScreenState extends State<UserSearchScreen> {
             email.toLowerCase().contains(searchLower) ||
             username.toLowerCase().contains(searchLower)) {
           
-          final avatarUrl = userData['photoUrl'] ?? userData['photoURL'];
+          // Get photo URL, but treat asset paths as no photo
+          final photoUrl = userData['photoUrl'] ?? userData['photoURL'];
+          final avatarUrl = (photoUrl != null && photoUrl.startsWith('http')) 
+              ? photoUrl 
+              : null; // Treat asset paths and null as no photo
           
           results.add(UserSearchData(
             uid: doc.id,
@@ -399,18 +409,61 @@ class _UserSearchScreenState extends State<UserSearchScreen> {
   }
 
   Widget _buildAvatar(String? avatarUrl, String name) {
-    if (avatarUrl == null || avatarUrl.isEmpty) {
-      return const CircleAvatar(
-        backgroundImage: AssetImage('assets/img/reptiGramLogo.png'),
-      );
+    // Check if it's a network URL (real photo) or asset/default
+    if (avatarUrl == null || avatarUrl.isEmpty || !avatarUrl.startsWith('http')) {
+      // No photo or asset path - show letter avatar
+      return _buildLetterAvatar(name);
     }
 
+    // Show network image with proper error handling
     return CircleAvatar(
       backgroundImage: NetworkImage(avatarUrl),
       onBackgroundImageError: (exception, stackTrace) {
-        print('Avatar image failed to load: $avatarUrl, error: $exception');
+        // Handle image loading errors by showing letter avatar
+        print('User search avatar image failed to load: $avatarUrl, error: $exception');
       },
+      child: null, // Remove any child to let background image show
     );
+  }
+
+  Widget _buildLetterAvatar(String name) {
+    // Get the first letter of the name, fallback to '?' if empty
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    
+    // Generate a consistent color based on the name
+    final color = _getColorFromName(name);
+    
+    return CircleAvatar(
+      backgroundColor: color,
+      child: Text(
+        initial,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 16,
+        ),
+      ),
+    );
+  }
+
+  Color _getColorFromName(String name) {
+    // Generate a consistent color based on the name
+    final colors = [
+      Colors.blue,
+      Colors.green,
+      Colors.orange,
+      Colors.purple,
+      Colors.teal,
+      Colors.pink,
+      Colors.indigo,
+      Colors.brown,
+      Colors.red,
+      Colors.cyan,
+    ];
+    
+    // Use the first character's ASCII value to pick a color
+    final index = name.isNotEmpty ? name.codeUnitAt(0) % colors.length : 0;
+    return colors[index];
   }
 }
 

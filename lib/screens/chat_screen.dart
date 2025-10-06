@@ -4,11 +4,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:provider/provider.dart';
 import '../models/chat_message.dart';
 import '../services/chat_service.dart';
 import '../services/firestore_service.dart';
 import '../services/message_cache_service.dart';
 import '../services/avatar_cache_service.dart';
+import '../state/app_state.dart';
 import '../styles/colors.dart';
 import '../utils/responsive_utils.dart';
 
@@ -55,12 +57,30 @@ class _ChatScreenState extends State<ChatScreen> {
     _loadInitialMessages();
     // Add scroll listener for infinite scroll
     _scrollController.addListener(_onScroll);
+    
+    // Listen to AppState changes to clear avatar cache when profile pictures are updated
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final appState = Provider.of<AppState>(context, listen: false);
+      appState.addListener(_onAppStateChanged);
+    });
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
+    // Remove listener to prevent memory leaks
+    final appState = Provider.of<AppState>(context, listen: false);
+    appState.removeListener(_onAppStateChanged);
     super.dispose();
+  }
+
+  void _onAppStateChanged() {
+    // Clear avatar cache when AppState changes (profile pictures updated)
+    if (mounted) {
+      setState(() {
+        _avatarCache.clear();
+      });
+    }
   }
 
   void _onScroll() {
@@ -311,41 +331,47 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<String?> _getAvatarUrl(String userId) async {
-    // Check in-memory cache first
+    // Check local cache first
     if (_avatarCache.containsKey(userId)) {
       return _avatarCache[userId];
     }
     
-    // Check persistent cache
-    final cachedUrl = await AvatarCacheService.getCachedAvatarUrl(userId);
-    if (cachedUrl != null) {
+    try {
+      // First check AppState for cached profile picture
+      final appState = Provider.of<AppState>(context, listen: false);
+      final cachedUrl = appState.getProfilePicture(userId);
+      
+      if (cachedUrl != null) {
+        setState(() {
+          _avatarCache[userId] = cachedUrl;
+        });
+        return cachedUrl;
+      }
+      
+      // If not in AppState cache, get from Firestore
+      final url = await FirestoreService.getUserPhotoUrl(userId);
+      
+      // Cache in AppState for future use
+      appState.updateProfilePicture(userId, url);
+      
+      // Cache the result locally
       setState(() {
-        _avatarCache[userId] = cachedUrl;
+        _avatarCache[userId] = url;
       });
-      return cachedUrl;
+      
+      return url;
+    } catch (e) {
+      print('Error fetching avatar for user $userId: $e');
+      return null;
     }
-    
-    // Get photo URL from Firestore (includes both custom uploads and Google profile URLs)
-    final url = await FirestoreService.getUserPhotoUrl(userId);
-    
-    // Cache the result
-    setState(() {
-      _avatarCache[userId] = url;
-    });
-    
-    // Cache persistently
-    await AvatarCacheService.cacheAvatarUrl(userId, url);
-    
-    return url;
   }
 
   Widget _buildChatAvatar(String? avatarUrl, String userId) {
-    if (avatarUrl == null || avatarUrl.isEmpty) {
-      // Show app logo as fallback for no avatar
-      return CircleAvatar(
-        radius: 16,
-        backgroundImage: const AssetImage('assets/img/reptiGramLogo.png'),
-      );
+    // Check if it's a network URL (real photo) or asset/default
+    if (avatarUrl == null || avatarUrl.isEmpty || !avatarUrl.startsWith('http')) {
+      // No photo or asset path - show letter avatar with actual name
+      final peerName = widget.peerNameFromConversation ?? widget.peerName ?? 'User';
+      return _buildLetterAvatar(peerName);
     }
 
     // Show network image with proper error handling
@@ -353,11 +379,52 @@ class _ChatScreenState extends State<ChatScreen> {
       radius: 16,
       backgroundImage: NetworkImage(avatarUrl),
       onBackgroundImageError: (exception, stackTrace) {
-        // Handle image loading errors by showing app logo
+        // Handle image loading errors by showing letter avatar
         print('Chat avatar image failed to load: $avatarUrl, error: $exception');
       },
       child: null, // Remove the preemptive fallback for Google URLs
     );
+  }
+
+  Widget _buildLetterAvatar(String name) {
+    // Get the first letter of the name, fallback to '?' if empty
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    
+    // Generate a consistent color based on the name
+    final color = _getColorFromName(name);
+    
+    return CircleAvatar(
+      radius: 16,
+      backgroundColor: color,
+      child: Text(
+        initial,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 16,
+        ),
+      ),
+    );
+  }
+
+  Color _getColorFromName(String name) {
+    // Generate a consistent color based on the name
+    final colors = [
+      Colors.blue,
+      Colors.green,
+      Colors.orange,
+      Colors.purple,
+      Colors.teal,
+      Colors.pink,
+      Colors.indigo,
+      Colors.brown,
+      Colors.red,
+      Colors.cyan,
+    ];
+    
+    // Use the first character's ASCII value to pick a color
+    final index = name.isNotEmpty ? name.codeUnitAt(0) % colors.length : 0;
+    return colors[index];
   }
 
   Widget _buildMessageContent(ChatMessage msg) {
@@ -649,12 +716,30 @@ class _ChatScreenState extends State<ChatScreen> {
               future: _getAvatarUrl(widget.peerUid ?? ''),
               builder: (context, snapshot) {
                 final avatarUrl = snapshot.data;
-                return CircleAvatar(
-                  radius: 30,
-                  backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty
-                      ? NetworkImage(avatarUrl)
-                      : const AssetImage('assets/img/reptiGramLogo.png') as ImageProvider,
-                );
+                if (avatarUrl != null && avatarUrl.isNotEmpty && avatarUrl.startsWith('http')) {
+                  return CircleAvatar(
+                    radius: 30,
+                    backgroundImage: NetworkImage(avatarUrl),
+                    onBackgroundImageError: (exception, stackTrace) {
+                      print('User info avatar image failed to load: $avatarUrl, error: $exception');
+                    },
+                  );
+                } else {
+                  // No photo - show letter avatar
+                  final peerName = widget.peerNameFromConversation ?? widget.peerName ?? 'User';
+                  return CircleAvatar(
+                    radius: 30,
+                    backgroundColor: _getColorFromName(peerName),
+                    child: Text(
+                      peerName.isNotEmpty ? peerName[0].toUpperCase() : '?',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 24,
+                      ),
+                    ),
+                  );
+                }
               },
             ),
             const SizedBox(width: 12),

@@ -319,7 +319,13 @@ class FirestoreService {
     final doc = await users.doc(uid).get();
     if (doc.exists) {
       final data = doc.data() as Map<String, dynamic>;
-      return data['photoUrl'] ?? data['photoURL'];
+      final photoUrl = data['photoUrl'] ?? data['photoURL'];
+      
+      // Only return HTTP URLs (real photos), treat asset paths as no photo
+      if (photoUrl != null && photoUrl.startsWith('http')) {
+        return photoUrl;
+      }
+      return null; // Treat asset paths and null as no photo
     }
     return null;
   }

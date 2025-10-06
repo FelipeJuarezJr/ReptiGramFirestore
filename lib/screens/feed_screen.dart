@@ -49,6 +49,7 @@ class _FeedScreenState extends State<FeedScreen> {
         await _loadPhotos();
       }
     });
+    
   }
 
   @override
@@ -56,6 +57,7 @@ class _FeedScreenState extends State<FeedScreen> {
     _scrollController.dispose();
     super.dispose();
   }
+
 
   void _onScroll() {
     if (_scrollController.position.pixels >=
@@ -996,7 +998,6 @@ class FullScreenPhotoView extends StatefulWidget {
 class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
   final TextEditingController _commentController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final Map<String, String?> _avatarUrls = {}; // Cache for avatar URLs
   XFile? _selectedCommentImage; // For comment image upload
 
   @override
@@ -1021,57 +1022,57 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
     super.dispose();
   }
 
-  Future<String?> _getAvatarUrl(String userId) async {
-    if (_avatarUrls.containsKey(userId)) {
-      return _avatarUrls[userId];
-    }
-    
-    try {
-      // Get photo URL from Firestore (includes both custom uploads and Google profile URLs)
-      final url = await FirestoreService.getUserPhotoUrl(userId);
-      
-      if (mounted) {
-        setState(() {
-          _avatarUrls[userId] = url;
-        });
-      }
-      return url;
-    } catch (e) {
-      print('Error fetching avatar for user $userId: $e');
-      return null;
-    }
-  }
 
   Widget _buildUserAvatar(String userId) {
+    // Feed screen only shows usernames, not profile pictures
     return FutureBuilder<String?>(
-      future: _getAvatarUrl(userId),
-      builder: (context, snapshot) {
-        final avatarUrl = snapshot.data;
-        
-        if (avatarUrl == null || avatarUrl.isEmpty) {
-          // Show app logo as fallback for no avatar
-          return CircleAvatar(
-            radius: 16,
-            backgroundImage: const AssetImage('assets/img/reptiGramLogo.png'),
-          );
-        }
-
-        // Show network image with proper error handling
-        return CircleAvatar(
-          radius: 16,
-          backgroundImage: NetworkImage(avatarUrl),
-          onBackgroundImageError: (exception, stackTrace) {
-            // Handle image loading errors by showing app logo
-            print('Feed avatar image failed to load: $avatarUrl, error: $exception');
-            if (mounted) {
-              setState(() {
-                _avatarUrls[userId] = null;
-              });
-            }
-          },
-        );
+      future: Provider.of<AppState>(context, listen: false).fetchUsername(userId),
+      builder: (context, usernameSnapshot) {
+        final username = usernameSnapshot.data ?? 'User';
+        return _buildLetterAvatar(username);
       },
     );
+  }
+
+  Widget _buildLetterAvatar(String name) {
+    // Get the first letter of the name, fallback to '?' if empty
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    
+    // Generate a consistent color based on the name
+    final color = _getColorFromName(name);
+    
+    return CircleAvatar(
+      radius: 16,
+      backgroundColor: color,
+      child: Text(
+        initial,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 16,
+        ),
+      ),
+    );
+  }
+
+  Color _getColorFromName(String name) {
+    // Generate a consistent color based on the name
+    final colors = [
+      Colors.blue,
+      Colors.green,
+      Colors.orange,
+      Colors.purple,
+      Colors.teal,
+      Colors.pink,
+      Colors.indigo,
+      Colors.brown,
+      Colors.red,
+      Colors.cyan,
+    ];
+    
+    // Use the first character's ASCII value to pick a color
+    final index = name.isNotEmpty ? name.codeUnitAt(0) % colors.length : 0;
+    return colors[index];
   }
 
   Future<void> _postComment(String content) async {

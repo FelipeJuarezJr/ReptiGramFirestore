@@ -6,7 +6,7 @@ import 'register_screen.dart';
 import 'forgot_password_screen.dart';
 import '../widgets/google_sign_in_button.dart';  // You might replace this with your inline button if you want
 import '../styles/colors.dart';
-import '../screens/post_screen.dart';
+import 'home_dashboard_screen.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import '../services/firestore_service.dart';
@@ -75,7 +75,7 @@ class _LoginScreenState extends State<LoginScreen> {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (context) => const PostScreen(shouldLoadPosts: true),
+              builder: (context) => const HomeDashboardScreen(isCurrentUser: true),
             ),
           );
         }
@@ -138,7 +138,7 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (context) => PostScreen(shouldLoadPosts: true),
+            builder: (context) => const HomeDashboardScreen(),
           ),
         );
       }

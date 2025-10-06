@@ -73,6 +73,23 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Profile picture management
+  Map<String, String?> _profilePictures = {};
+
+  String? getProfilePicture(String userId) {
+    return _profilePictures[userId];
+  }
+
+  void updateProfilePicture(String userId, String? photoUrl) {
+    _profilePictures[userId] = photoUrl;
+    notifyListeners();
+  }
+
+  void clearProfilePictureCache(String userId) {
+    _profilePictures.remove(userId);
+    notifyListeners();
+  }
+
   // Photo management
   void setPhotos(List<PhotoData> photos) {
     _photos = photos;
@@ -109,6 +126,7 @@ class AppState extends ChangeNotifier {
   void clearState() {
     _currentUser = null;
     _usernames.clear();
+    _profilePictures.clear();
     _photos.clear();
     _isLoading = false;
     _error = null;

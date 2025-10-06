@@ -49,13 +49,32 @@ class _PostScreenState extends State<PostScreen> {
     // Load posts when screen is mounted
     _loadPosts();
     _loadUsernames();
+    
+    // Listen to AppState changes to clear avatar cache when profile pictures are updated
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final appState = Provider.of<AppState>(context, listen: false);
+      appState.addListener(_onAppStateChanged);
+    });
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
+    // Remove listener to prevent memory leaks
+    final appState = Provider.of<AppState>(context, listen: false);
+    appState.removeListener(_onAppStateChanged);
     super.dispose();
   }
+
+  void _onAppStateChanged() {
+    // Clear avatar cache when AppState changes (profile pictures updated)
+    if (mounted) {
+      setState(() {
+        _avatarUrls.clear();
+      });
+    }
+  }
+
 
   void _onScroll() {
     if (_scrollController.position.pixels >=
@@ -1000,8 +1019,24 @@ class _PostScreenState extends State<PostScreen> {
     }
     
     try {
-      // Get photo URL from Firestore (includes both custom uploads and Google profile URLs)
+      // First check AppState for cached profile picture
+      final appState = Provider.of<AppState>(context, listen: false);
+      final cachedUrl = appState.getProfilePicture(userId);
+      
+      if (cachedUrl != null) {
+        if (mounted) {
+          setState(() {
+            _avatarUrls[userId] = cachedUrl;
+          });
+        }
+        return cachedUrl;
+      }
+      
+      // If not in AppState cache, get from Firestore
       final url = await FirestoreService.getUserPhotoUrl(userId);
+      
+      // Cache in AppState for future use
+      appState.updateProfilePicture(userId, url);
       
       if (mounted) {
         setState(() {
@@ -1021,11 +1056,15 @@ class _PostScreenState extends State<PostScreen> {
       builder: (context, snapshot) {
         final avatarUrl = snapshot.data;
         
-        if (avatarUrl == null || avatarUrl.isEmpty) {
-          // Show app logo as fallback for no avatar
-          return CircleAvatar(
-            radius: 12,
-            backgroundImage: const AssetImage('assets/img/reptiGramLogo.png'),
+        // Check if it's a network URL (real photo) or asset/default
+        if (avatarUrl == null || avatarUrl.isEmpty || !avatarUrl.startsWith('http')) {
+          // No photo or asset path - show letter avatar
+          return FutureBuilder<String?>(
+            future: Provider.of<AppState>(context, listen: false).fetchUsername(userId),
+            builder: (context, usernameSnapshot) {
+              final username = usernameSnapshot.data ?? 'User';
+              return _buildLetterAvatar(username);
+            },
           );
         }
 
@@ -1034,7 +1073,7 @@ class _PostScreenState extends State<PostScreen> {
           radius: 12,
           backgroundImage: NetworkImage(avatarUrl),
           onBackgroundImageError: (exception, stackTrace) {
-            // Handle image loading errors by showing app logo
+            // Handle image loading errors by showing letter avatar
             print('Post avatar image failed to load: $avatarUrl, error: $exception');
             if (mounted) {
               // Use post-frame callback to avoid calling setState during paint
@@ -1047,9 +1086,51 @@ class _PostScreenState extends State<PostScreen> {
               });
             }
           },
+          child: null, // Remove any child to let background image show
         );
       },
     );
+  }
+
+  Widget _buildLetterAvatar(String name) {
+    // Get the first letter of the name, fallback to '?' if empty
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    
+    // Generate a consistent color based on the name
+    final color = _getColorFromName(name);
+    
+    return CircleAvatar(
+      radius: 12,
+      backgroundColor: color,
+      child: Text(
+        initial,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 14,
+        ),
+      ),
+    );
+  }
+
+  Color _getColorFromName(String name) {
+    // Generate a consistent color based on the name
+    final colors = [
+      Colors.blue,
+      Colors.green,
+      Colors.orange,
+      Colors.purple,
+      Colors.teal,
+      Colors.pink,
+      Colors.indigo,
+      Colors.brown,
+      Colors.red,
+      Colors.cyan,
+    ];
+    
+    // Use the first character's ASCII value to pick a color
+    final index = name.isNotEmpty ? name.codeUnitAt(0) % colors.length : 0;
+    return colors[index];
   }
 
   @override
