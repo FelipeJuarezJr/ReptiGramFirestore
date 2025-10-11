@@ -24,11 +24,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final isGoogleUser = user?.providerData.any((p) => p.providerId == 'google.com') ?? false;
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: darkModeProvider.isDarkMode ? Colors.black : Colors.transparent,
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: AppColors.mainGradient,
-        ),
+        decoration: darkModeProvider.isDarkMode 
+            ? null 
+            : const BoxDecoration(
+                gradient: AppColors.mainGradient,
+              ),
         child: SafeArea(
           child: ResponsiveUtils.isWideScreen(context) 
               ? _buildDesktopLayout(context, user, isGoogleUser, darkModeProvider)
@@ -57,16 +59,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 child: Container(
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Color(0xFFFFF8E1), // Light cream
-                        Color(0xFFFFE0B2), // Light orange
-                        Color(0xFFFFCC80), // Medium orange
-                      ],
-                      stops: [0.0, 0.5, 1.0],
-                    ),
+                    gradient: darkModeProvider.isDarkMode 
+                        ? const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFF2D2D2D), // Dark grey
+                              Color(0xFF1A1A1A), // Darker grey
+                              Color(0xFF0F0F0F), // Almost black
+                            ],
+                            stops: [0.0, 0.5, 1.0],
+                          )
+                        : const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFFFFF8E1), // Light cream
+                              Color(0xFFFFE0B2), // Light orange
+                              Color(0xFFFFCC80), // Medium orange
+                            ],
+                            stops: [0.0, 0.5, 1.0],
+                          ),
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
@@ -84,15 +97,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Row(
                           children: [
                             IconButton(
-                              icon: const Icon(Icons.arrow_back, color: AppColors.titleText),
+                              icon: Icon(Icons.arrow_back, color: darkModeProvider.isDarkMode ? Colors.white : AppColors.titleText),
                               onPressed: () => Navigator.pop(context),
                             ),
-                            const Text(
+                            Text(
                               'Settings',
                               style: TextStyle(
                                 fontSize: 24,
                                 fontWeight: FontWeight.bold,
-                                color: AppColors.titleText,
+                                color: darkModeProvider.isDarkMode ? Colors.white : AppColors.titleText,
                               ),
                             ),
                           ],
@@ -120,7 +133,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: darkModeProvider.isDarkMode ? Colors.grey[900] : Colors.white,
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Column(
@@ -171,15 +184,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: Row(
             children: [
               IconButton(
-                icon: const Icon(Icons.arrow_back, color: AppColors.titleText),
+                icon: Icon(Icons.arrow_back, color: darkModeProvider.isDarkMode ? Colors.white : AppColors.titleText),
                 onPressed: () => Navigator.pop(context),
               ),
-              const Text(
+              Text(
                 'Settings',
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
-                  color: AppColors.titleText,
+                  color: darkModeProvider.isDarkMode ? Colors.white : AppColors.titleText,
                 ),
               ),
             ],
@@ -191,7 +204,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: Container(
             margin: const EdgeInsets.all(16.0),
             decoration: BoxDecoration(
-              gradient: AppColors.inputGradient,
+              gradient: darkModeProvider.isDarkMode 
+                  ? LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Colors.grey[800]!,
+                        Colors.grey[900]!,
+                        Colors.black,
+                      ],
+                    )
+                  : AppColors.inputGradient,
               borderRadius: AppColors.pillShape,
             ),
             child: _buildSettingsList(user, isGoogleUser, darkModeProvider),
@@ -203,16 +226,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildDesktopUserInfo(User user) {
     final appState = Provider.of<AppState>(context);
+    final darkModeProvider = Provider.of<DarkModeProvider>(context);
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Account Information',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
-            color: AppColors.titleText,
+            color: darkModeProvider.isDarkMode ? Colors.white : AppColors.titleText,
           ),
         ),
         const SizedBox(height: 16),
@@ -230,17 +254,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   Text(
                     user.displayName ?? 'User',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
-                      color: AppColors.titleText,
+                      color: darkModeProvider.isDarkMode ? Colors.white : AppColors.titleText,
                     ),
                   ),
                   Text(
                     user.email ?? 'No email',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
-                      color: AppColors.titleText,
+                      color: darkModeProvider.isDarkMode ? Colors.grey[300] : AppColors.titleText,
                     ),
                   ),
                   FutureBuilder<String?>(
@@ -284,15 +308,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildSettingsStats() {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context);
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Settings Overview',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
-            color: AppColors.titleText,
+            color: darkModeProvider.isDarkMode ? Colors.white : AppColors.titleText,
           ),
         ),
         const SizedBox(height: 12),
@@ -306,15 +332,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildStatItem(String title, String subtitle, IconData icon) {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context);
+    
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.3),
+        color: darkModeProvider.isDarkMode 
+            ? Colors.grey[800]!.withOpacity(0.5)
+            : Colors.white.withOpacity(0.3),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
-          Icon(icon, color: AppColors.titleText, size: 20),
+          Icon(icon, color: darkModeProvider.isDarkMode ? Colors.white : AppColors.titleText, size: 20),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -322,17 +352,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.titleText,
+                    color: darkModeProvider.isDarkMode ? Colors.white : AppColors.titleText,
                   ),
                 ),
                 Text(
                   subtitle,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
-                    color: AppColors.titleText,
+                    color: darkModeProvider.isDarkMode ? Colors.grey[300] : AppColors.titleText,
                   ),
                 ),
               ],
@@ -459,45 +489,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildDesktopSettingTile(String title, IconData icon, String subtitle, {Widget? trailing, VoidCallback? onTap, Color? textColor}) {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context);
+    
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.grey.withOpacity(0.05),
+        color: darkModeProvider.isDarkMode 
+            ? Colors.grey[800]!.withOpacity(0.3)
+            : Colors.grey.withOpacity(0.05),
         borderRadius: BorderRadius.circular(12),
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.all(16),
-        leading: Icon(icon, color: textColor ?? Colors.brown, size: 24),
+        leading: Icon(icon, color: textColor ?? (darkModeProvider.isDarkMode ? Colors.white : Colors.brown), size: 24),
         title: Text(
           title,
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            color: textColor ?? Colors.brown,
+            color: textColor ?? (darkModeProvider.isDarkMode ? Colors.white : Colors.brown),
           ),
         ),
         subtitle: Text(
           subtitle,
           style: TextStyle(
             fontSize: 12,
-            color: Colors.grey[600],
+            color: darkModeProvider.isDarkMode ? Colors.grey[400] : Colors.grey[600],
           ),
         ),
-        trailing: trailing ?? (onTap != null ? const Icon(Icons.arrow_forward_ios, color: Colors.brown, size: 16) : null),
+        trailing: trailing ?? (onTap != null ? Icon(Icons.arrow_forward_ios, color: darkModeProvider.isDarkMode ? Colors.white : Colors.brown, size: 16) : null),
         onTap: onTap,
       ),
     );
   }
 
   Widget _buildSectionHeader(String title) {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context);
+    
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Text(
         title,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 18,
           fontWeight: FontWeight.bold,
-          color: Colors.brown,
+          color: darkModeProvider.isDarkMode ? Colors.white : Colors.brown,
         ),
       ),
     );
@@ -505,11 +541,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildUserInfoTile(User user) {
     final appState = Provider.of<AppState>(context);
+    final darkModeProvider = Provider.of<DarkModeProvider>(context);
     
     return Container(
       padding: const EdgeInsets.all(16.0),
       decoration: BoxDecoration(
-        color: Colors.brown.withOpacity(0.1),
+        color: darkModeProvider.isDarkMode 
+            ? Colors.grey[800]!.withOpacity(0.3)
+            : Colors.brown.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -529,17 +568,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   children: [
                     Text(
                       user.displayName ?? 'User',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: Colors.brown,
+                        color: darkModeProvider.isDarkMode ? Colors.white : Colors.brown,
                       ),
                     ),
                     Text(
                       user.email ?? 'No email',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
-                        color: Colors.brown,
+                        color: darkModeProvider.isDarkMode ? Colors.grey[300] : Colors.brown,
                       ),
                     ),
                     FutureBuilder<String?>(
@@ -575,25 +614,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildPasswordTile(String title, IconData icon, VoidCallback onTap) {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context);
+    
     return ListTile(
-      leading: Icon(icon, color: Colors.brown),
+      leading: Icon(icon, color: darkModeProvider.isDarkMode ? Colors.white : Colors.brown),
       title: Text(
         title,
-        style: const TextStyle(color: Colors.brown),
+        style: TextStyle(color: darkModeProvider.isDarkMode ? Colors.white : Colors.brown),
       ),
-      trailing: const Icon(Icons.arrow_forward_ios, color: Colors.brown, size: 16),
+      trailing: Icon(Icons.arrow_forward_ios, color: darkModeProvider.isDarkMode ? Colors.white : Colors.brown, size: 16),
       onTap: onTap,
     );
   }
 
   Widget _buildSettingTile(String title, IconData icon, {Widget? trailing, VoidCallback? onTap, Color? textColor}) {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context);
+    
     return ListTile(
-      leading: Icon(icon, color: textColor ?? Colors.brown),
+      leading: Icon(icon, color: textColor ?? (darkModeProvider.isDarkMode ? Colors.white : Colors.brown)),
       title: Text(
         title,
-        style: TextStyle(color: textColor ?? Colors.brown),
+        style: TextStyle(color: textColor ?? (darkModeProvider.isDarkMode ? Colors.white : Colors.brown)),
       ),
-      trailing: trailing ?? (onTap != null ? const Icon(Icons.arrow_forward_ios, color: Colors.brown, size: 16) : null),
+      trailing: trailing ?? (onTap != null ? Icon(Icons.arrow_forward_ios, color: darkModeProvider.isDarkMode ? Colors.white : Colors.brown, size: 16) : null),
       onTap: onTap,
     );
   }
@@ -622,45 +665,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: AppColors.pillShape),
-        title: const Text('Change Username', style: TextStyle(color: Colors.brown)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Current username: ${currentUsername.isNotEmpty ? currentUsername : 'Loading...'}',
-              style: const TextStyle(color: Colors.grey, fontSize: 14),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: newUsernameController,
-              decoration: const InputDecoration(
-                labelText: 'New Username',
-                border: OutlineInputBorder(),
-                hintText: 'Enter new username',
+      builder: (context) {
+        final darkModeProvider = Provider.of<DarkModeProvider>(context);
+        return AlertDialog(
+          backgroundColor: darkModeProvider.isDarkMode ? Colors.grey[900] : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: AppColors.pillShape),
+          title: Text('Change Username', style: TextStyle(color: darkModeProvider.isDarkMode ? Colors.white : Colors.brown)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Current username: ${currentUsername.isNotEmpty ? currentUsername : 'Loading...'}',
+                style: TextStyle(color: darkModeProvider.isDarkMode ? Colors.grey[400] : Colors.grey, fontSize: 14),
               ),
-              onChanged: (value) {
-                // Real-time validation
-                final error = ValidationUtils.getUsernameError(value);
-                if (error != null) {
-                  // You could show error text here
-                }
-              },
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Username must be 3-20 characters, alphanumeric and underscore only',
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: Colors.brown)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: newUsernameController,
+                decoration: InputDecoration(
+                  labelText: 'New Username',
+                  labelStyle: TextStyle(color: darkModeProvider.isDarkMode ? Colors.grey[400] : null),
+                  border: OutlineInputBorder(),
+                  hintText: 'Enter new username',
+                  hintStyle: TextStyle(color: darkModeProvider.isDarkMode ? Colors.grey[500] : null),
+                ),
+                style: TextStyle(color: darkModeProvider.isDarkMode ? Colors.white : null),
+                onChanged: (value) {
+                  // Real-time validation
+                  final error = ValidationUtils.getUsernameError(value);
+                  if (error != null) {
+                    // You could show error text here
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Username must be 3-20 characters, alphanumeric and underscore only',
+                style: TextStyle(color: darkModeProvider.isDarkMode ? Colors.grey[400] : Colors.grey, fontSize: 12),
+              ),
+            ],
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cancel', style: TextStyle(color: darkModeProvider.isDarkMode ? Colors.white : Colors.brown)),
+            ),
           ElevatedButton(
             onPressed: () async {
               final newUsername = newUsernameController.text.trim();
@@ -680,8 +728,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.brown),
             child: const Text('Change Username', style: TextStyle(color: Colors.white)),
           ),
-        ],
-      ),
+          ],
+        );
+      },
     );
   }
 
@@ -692,18 +741,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: AppColors.pillShape),
-        title: const Text('Change Password', style: TextStyle(color: Colors.brown)),
+      builder: (context) {
+        final darkModeProvider = Provider.of<DarkModeProvider>(context);
+        return AlertDialog(
+          backgroundColor: darkModeProvider.isDarkMode ? Colors.grey[900] : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: AppColors.pillShape),
+          title: Text('Change Password', style: TextStyle(color: darkModeProvider.isDarkMode ? Colors.white : Colors.brown)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: currentPasswordController,
               obscureText: true,
-              decoration: const InputDecoration(
+              style: TextStyle(color: darkModeProvider.isDarkMode ? Colors.white : null),
+              decoration: InputDecoration(
                 labelText: 'Current Password',
+                labelStyle: TextStyle(color: darkModeProvider.isDarkMode ? Colors.grey[400] : null),
                 border: OutlineInputBorder(),
               ),
             ),
@@ -711,8 +764,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             TextField(
               controller: newPasswordController,
               obscureText: true,
-              decoration: const InputDecoration(
+              style: TextStyle(color: darkModeProvider.isDarkMode ? Colors.white : null),
+              decoration: InputDecoration(
                 labelText: 'New Password',
+                labelStyle: TextStyle(color: darkModeProvider.isDarkMode ? Colors.grey[400] : null),
                 border: OutlineInputBorder(),
               ),
             ),
@@ -720,8 +775,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             TextField(
               controller: confirmPasswordController,
               obscureText: true,
-              decoration: const InputDecoration(
+              style: TextStyle(color: darkModeProvider.isDarkMode ? Colors.white : null),
+              decoration: InputDecoration(
                 labelText: 'Confirm New Password',
+                labelStyle: TextStyle(color: darkModeProvider.isDarkMode ? Colors.grey[400] : null),
                 border: OutlineInputBorder(),
               ),
             ),
@@ -730,7 +787,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: Colors.brown)),
+            child: Text('Cancel', style: TextStyle(color: darkModeProvider.isDarkMode ? Colors.white : Colors.brown)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -745,25 +802,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: const Text('Change Password', style: TextStyle(color: Colors.white)),
           ),
         ],
-      ),
+        );
+      },
     );
   }
 
   void _showResetPasswordDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: AppColors.pillShape),
-        title: const Text('Reset Password', style: TextStyle(color: Colors.brown)),
-        content: const Text(
+      builder: (context) {
+        final darkModeProvider = Provider.of<DarkModeProvider>(context);
+        return AlertDialog(
+          backgroundColor: darkModeProvider.isDarkMode ? Colors.grey[900] : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: AppColors.pillShape),
+          title: Text('Reset Password', style: TextStyle(color: darkModeProvider.isDarkMode ? Colors.white : Colors.brown)),
+        content: Text(
           'A password reset email will be sent to your email address. '
           'Check your inbox and follow the link to reset your password.',
+          style: TextStyle(color: darkModeProvider.isDarkMode ? Colors.grey[300] : null),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: Colors.brown)),
+            child: Text('Cancel', style: TextStyle(color: darkModeProvider.isDarkMode ? Colors.white : Colors.brown)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -774,7 +835,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: const Text('Send Reset Email', style: TextStyle(color: Colors.white)),
           ),
         ],
-      ),
+        );
+      },
     );
   }
 

@@ -9,11 +9,13 @@ import 'package:firebase_storage/firebase_storage.dart';
 import '../styles/colors.dart';
 import '../utils/responsive_utils.dart';
 import '../state/app_state.dart';
+import '../state/dark_mode_provider.dart';
 import '../services/firestore_service.dart';
 import 'post_screen.dart';
 import 'albums_screen.dart';
 import 'feed_screen.dart';
 import 'login_screen.dart';
+import '../widgets/nav_drawer.dart';
 
 class HomeDashboardScreen extends StatefulWidget {
   final String? userId;
@@ -32,6 +34,7 @@ class HomeDashboardScreen extends StatefulWidget {
 class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   int _selectedBottomNavIndex = 0;
   final TextEditingController _searchController = TextEditingController();
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   List<Map<String, dynamic>> _searchResults = [];
   bool _isSearching = false;
   bool _showSearchResults = false;
@@ -68,6 +71,12 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   // Custom profile phrase
   String? _customPhrase;
   bool _isHoveringPhrase = false;
+  
+  // Background hover state
+  bool _isHoveringBackground = false;
+  
+  // Profile picture hover state
+  bool _isHoveringProfilePic = false;
   
   // Follow status for other users
   bool _isFollowing = false;
@@ -1138,8 +1147,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     // Check authentication state
-    return Consumer<AppState>(
-      builder: (context, appState, child) {
+    return Consumer2<AppState, DarkModeProvider>(
+      builder: (context, appState, darkModeProvider, child) {
         final currentUser = appState.currentUser;
         
         // If user is not authenticated, redirect to login
@@ -1147,14 +1156,20 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
           return const LoginScreen();
         }
         
-        return _buildMainContent(context);
+        return _buildMainContent(context, darkModeProvider);
       },
     );
   }
 
-  Widget _buildMainContent(BuildContext context) {
+  Widget _buildMainContent(BuildContext context, DarkModeProvider darkModeProvider) {
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: Colors.black,
+      drawer: widget.isCurrentUser ? NavDrawer(
+        userEmail: FirebaseAuth.instance.currentUser?.email,
+        userName: FirebaseAuth.instance.currentUser?.displayName,
+        userPhotoUrl: FirebaseAuth.instance.currentUser?.photoURL,
+      ) : null,
       body: Stack(
         children: [
           SafeArea(
@@ -1217,7 +1232,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                     size: 24,
                   ),
                   onPressed: () {
-                    Scaffold.of(context).openDrawer();
+                    _scaffoldKey.currentState?.openDrawer();
                   },
                 ),
               ] else ...[
@@ -1405,56 +1420,66 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
             // User profile picture
             GestureDetector(
               onTap: widget.isCurrentUser ? _uploadProfilePicture : null,
-              child: Stack(
-                children: [
-                  Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 3),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.3),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: ClipOval(
-                      child: _buildProfilePicture(),
-                    ),
-                  ),
-                  // Edit icon overlay for current user
-                  if (widget.isCurrentUser)
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: Container(
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          color: Colors.blue,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2),
-                        ),
-                        child: _isUploadingProfilePic
-                            ? const SizedBox(
-                                width: 12,
-                                height: 12,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.camera_alt,
-                                color: Colors.white,
-                                size: 12,
-                              ),
+              child: MouseRegion(
+                onEnter: widget.isCurrentUser ? (_) => setState(() => _isHoveringProfilePic = true) : null,
+                onExit: widget.isCurrentUser ? (_) => setState(() => _isHoveringProfilePic = false) : null,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 3),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.3),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: ClipOval(
+                        child: _buildProfilePicture(),
                       ),
                     ),
-                ],
+                    // Loading indicator
+                    if (widget.isCurrentUser && _isUploadingProfilePic)
+                      const Positioned.fill(
+                        child: CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      ),
+                    // Hover overlay for current user
+                    if (widget.isCurrentUser && _isHoveringProfilePic && !_isUploadingProfilePic)
+                      Container(
+                        width: 80,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.5),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.edit, color: Colors.white, size: 24),
+                              SizedBox(height: 4),
+                              Text(
+                                'Change',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -1518,26 +1543,30 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
               Positioned(
                 top: 8,
                 right: 8,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.6),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: _isUploadingBackground
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
+                child: MouseRegion(
+                  onEnter: (_) => setState(() => _isHoveringBackground = true),
+                  onExit: (_) => setState(() => _isHoveringBackground = false),
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: _isUploadingBackground
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Icon(
+                            Icons.wallpaper,
                             color: Colors.white,
+                            size: _isHoveringBackground ? 18 : 16,
                           ),
-                        )
-                      : const Icon(
-                          Icons.wallpaper,
-                          color: Colors.white,
-                          size: 16,
-                        ),
+                  ),
                 ),
               ),
           ],

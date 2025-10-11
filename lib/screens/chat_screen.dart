@@ -39,6 +39,7 @@ class _ChatScreenState extends State<ChatScreen> {
   late final currentUser = FirebaseAuth.instance.currentUser!;
 
   final Map<String, String?> _avatarCache = {};
+  AppState? _appState;
   
   // Pagination state
   List<ChatMessage> _messages = [];
@@ -57,20 +58,21 @@ class _ChatScreenState extends State<ChatScreen> {
     _loadInitialMessages();
     // Add scroll listener for infinite scroll
     _scrollController.addListener(_onScroll);
-    
-    // Listen to AppState changes to clear avatar cache when profile pictures are updated
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final appState = Provider.of<AppState>(context, listen: false);
-      appState.addListener(_onAppStateChanged);
-    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Store reference to AppState for safe access in dispose()
+    _appState = Provider.of<AppState>(context, listen: false);
+    _appState?.addListener(_onAppStateChanged);
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
     // Remove listener to prevent memory leaks
-    final appState = Provider.of<AppState>(context, listen: false);
-    appState.removeListener(_onAppStateChanged);
+    _appState?.removeListener(_onAppStateChanged);
     super.dispose();
   }
 

@@ -27,6 +27,7 @@ class _DMInboxScreenState extends State<DMInboxScreen> {
   List<ConversationData> _conversations = [];
   DocumentSnapshot? _lastConversationDocument;
   final ScrollController _scrollController = ScrollController();
+  AppState? _appState;
 
   @override
   void initState() {
@@ -34,20 +35,21 @@ class _DMInboxScreenState extends State<DMInboxScreen> {
     _loadConversations();
     // Add scroll listener for infinite scroll
     _scrollController.addListener(_onScroll);
-    
-    // Listen to AppState changes to clear avatar cache when profile pictures are updated
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final appState = Provider.of<AppState>(context, listen: false);
-      appState.addListener(_onAppStateChanged);
-    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Store reference to AppState for safe access in dispose()
+    _appState = Provider.of<AppState>(context, listen: false);
+    _appState?.addListener(_onAppStateChanged);
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
     // Remove listener to prevent memory leaks
-    final appState = Provider.of<AppState>(context, listen: false);
-    appState.removeListener(_onAppStateChanged);
+    _appState?.removeListener(_onAppStateChanged);
     super.dispose();
   }
 

@@ -6,6 +6,7 @@ import '../styles/colors.dart';
 import '../screens/login_screen.dart';
 import '../screens/settings_screen.dart';
 import '../state/app_state.dart';
+import '../state/dark_mode_provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data';
 import 'package:url_launcher/url_launcher.dart';
@@ -40,24 +41,26 @@ class _NavDrawerState extends State<NavDrawer> {
   String? _photoUrl;
   bool _isHovering = false;
   final ImagePicker _picker = ImagePicker();
+  AppState? _appState;
 
   @override
   void initState() {
     super.initState();
     _loadUserPhoto();
-    
-    // Listen to AppState changes to update profile picture when it changes elsewhere
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final appState = Provider.of<AppState>(context, listen: false);
-      appState.addListener(_onAppStateChanged);
-    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Store reference to AppState for safe access in dispose()
+    _appState = Provider.of<AppState>(context, listen: false);
+    _appState?.addListener(_onAppStateChanged);
   }
 
   @override
   void dispose() {
     // Remove listener to prevent memory leaks
-    final appState = Provider.of<AppState>(context, listen: false);
-    appState.removeListener(_onAppStateChanged);
+    _appState?.removeListener(_onAppStateChanged);
     super.dispose();
   }
 
@@ -183,6 +186,7 @@ class _NavDrawerState extends State<NavDrawer> {
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
+    final darkModeProvider = Provider.of<DarkModeProvider>(context);
     final user = FirebaseAuth.instance.currentUser;
     
     // Get username from AppState, fallback to prop, then to displayName
@@ -191,25 +195,36 @@ class _NavDrawerState extends State<NavDrawer> {
         : (widget.userName ?? user?.displayName ?? 'User');
     
     return Drawer(
+      backgroundColor: darkModeProvider.isDarkMode ? Colors.grey[900] : Colors.white,
       child: ListView(
         padding: EdgeInsets.zero,
         children: <Widget>[
           ResponsiveUtils.isWideScreen(context) 
-              ? _buildDesktopHeader(context, displayUsername)
-              : _buildMobileHeader(context, displayUsername),
+              ? _buildDesktopHeader(context, displayUsername, darkModeProvider)
+              : _buildMobileHeader(context, displayUsername, darkModeProvider),
           ResponsiveUtils.isWideScreen(context) 
-              ? _buildDesktopNavigation(context)
-              : _buildMobileNavigation(context),
+              ? _buildDesktopNavigation(context, darkModeProvider)
+              : _buildMobileNavigation(context, darkModeProvider),
         ],
       ),
     );
   }
 
-  Widget _buildDesktopHeader(BuildContext context, String displayUsername) {
+  Widget _buildDesktopHeader(BuildContext context, String displayUsername, DarkModeProvider darkModeProvider) {
     return Container(
       height: 200,
       decoration: BoxDecoration(
-        gradient: AppColors.mainGradient,
+        gradient: darkModeProvider.isDarkMode 
+            ? LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.grey[800]!,
+                  Colors.grey[900]!,
+                  Colors.black,
+                ],
+              )
+            : AppColors.mainGradient,
       ),
       child: Padding(
         padding: const EdgeInsets.all(24.0),
@@ -349,10 +364,20 @@ class _NavDrawerState extends State<NavDrawer> {
     );
   }
 
-  Widget _buildMobileHeader(BuildContext context, String displayUsername) {
+  Widget _buildMobileHeader(BuildContext context, String displayUsername, DarkModeProvider darkModeProvider) {
     return DrawerHeader(
       decoration: BoxDecoration(
-        gradient: AppColors.mainGradient,
+        gradient: darkModeProvider.isDarkMode 
+            ? LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.grey[800]!,
+                  Colors.grey[900]!,
+                  Colors.black,
+                ],
+              )
+            : AppColors.mainGradient,
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -438,8 +463,8 @@ class _NavDrawerState extends State<NavDrawer> {
                 alignment: Alignment.centerRight,
                 child: Text(
                   displayUsername,
-                  style: const TextStyle(
-                    color: AppColors.titleText,
+                  style: TextStyle(
+                    color: darkModeProvider.isDarkMode ? Colors.white : AppColors.titleText,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
@@ -449,8 +474,8 @@ class _NavDrawerState extends State<NavDrawer> {
                 alignment: Alignment.centerRight,
                 child: Text(
                   widget.userEmail ?? '',
-                  style: const TextStyle(
-                    color: AppColors.titleText,
+                  style: TextStyle(
+                    color: darkModeProvider.isDarkMode ? Colors.grey[300] : AppColors.titleText,
                     fontSize: 14,
                   ),
                 ),
@@ -462,7 +487,7 @@ class _NavDrawerState extends State<NavDrawer> {
     );
   }
 
-  Widget _buildDesktopNavigation(BuildContext context) {
+  Widget _buildDesktopNavigation(BuildContext context, DarkModeProvider darkModeProvider) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -580,14 +605,14 @@ class _NavDrawerState extends State<NavDrawer> {
     );
   }
 
-  Widget _buildMobileNavigation(BuildContext context) {
+  Widget _buildMobileNavigation(BuildContext context, DarkModeProvider darkModeProvider) {
     final user = FirebaseAuth.instance.currentUser;
     
     return Column(
       children: [
         ListTile(
-          leading: const Icon(Icons.home),
-          title: const Text('Home'),
+          leading: Icon(Icons.home, color: darkModeProvider.isDarkMode ? Colors.white : null),
+          title: Text('Home', style: TextStyle(color: darkModeProvider.isDarkMode ? Colors.white : null)),
           onTap: () {
             Navigator.pushReplacement(
               context,
@@ -598,8 +623,8 @@ class _NavDrawerState extends State<NavDrawer> {
           },
         ),
         ListTile(
-          leading: const Icon(Icons.photo_library),
-          title: const Text('Photos'),
+          leading: Icon(Icons.photo_library, color: darkModeProvider.isDarkMode ? Colors.white : null),
+          title: Text('Photos', style: TextStyle(color: darkModeProvider.isDarkMode ? Colors.white : null)),
           onTap: () {
             Navigator.pushReplacement(
               context,
@@ -612,7 +637,7 @@ class _NavDrawerState extends State<NavDrawer> {
         ListTile(
           leading: Stack(
             children: [
-              const Icon(Icons.message),
+              Icon(Icons.message, color: darkModeProvider.isDarkMode ? Colors.white : null),
               if (user != null)
                 StreamBuilder<int>(
                   stream: _getUnreadMessageCount(user.uid),
@@ -649,7 +674,7 @@ class _NavDrawerState extends State<NavDrawer> {
                 ),
             ],
           ),
-          title: const Text('Messages'),
+          title: Text('Messages', style: TextStyle(color: darkModeProvider.isDarkMode ? Colors.white : null)),
           onTap: () {
             Navigator.pushReplacement(
               context,
@@ -659,10 +684,10 @@ class _NavDrawerState extends State<NavDrawer> {
             );
           },
         ),
-        const Divider(),
+        Divider(color: darkModeProvider.isDarkMode ? Colors.grey[600] : null),
         ListTile(
-          leading: const Icon(Icons.settings),
-          title: const Text('Settings'),
+          leading: Icon(Icons.settings, color: darkModeProvider.isDarkMode ? Colors.white : null),
+          title: Text('Settings', style: TextStyle(color: darkModeProvider.isDarkMode ? Colors.white : null)),
           onTap: () {
             Navigator.pushReplacement(
               context,
@@ -673,8 +698,8 @@ class _NavDrawerState extends State<NavDrawer> {
           },
         ),
         ListTile(
-          leading: const Icon(Icons.logout),
-          title: const Text('Logout'),
+          leading: Icon(Icons.logout, color: darkModeProvider.isDarkMode ? Colors.white : null),
+          title: Text('Logout', style: TextStyle(color: darkModeProvider.isDarkMode ? Colors.white : null)),
           onTap: () async {
             try {
               await FirebaseAuth.instance.signOut();
