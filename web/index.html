@@ -257,9 +257,28 @@
       padding: 0;
       overflow: hidden;
       background: linear-gradient(135deg, #FFDE59 0%, #FF914D 100%);
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
     }
     #flutter_target {
       height: 100%;
+    }
+    
+    /* Fix for text input rendering on mobile PWA */
+    input, textarea, [contenteditable] {
+      -webkit-user-select: text;
+      user-select: text;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    
+    /* Prevent zoom on input focus on iOS */
+    @supports (-webkit-touch-callout: none) {
+      input, textarea, select {
+        font-size: 16px !important;
+      }
     }
     
     /* Loading screen to prevent blurry icon display */

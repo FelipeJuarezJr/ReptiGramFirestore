@@ -34,6 +34,7 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _controller = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
   final ChatService _chatService = ChatService();
   final ImagePicker _imagePicker = ImagePicker();
   late final currentUser = FirebaseAuth.instance.currentUser!;
@@ -58,6 +59,18 @@ class _ChatScreenState extends State<ChatScreen> {
     _loadInitialMessages();
     // Add scroll listener for infinite scroll
     _scrollController.addListener(_onScroll);
+    
+    // Ensure TextField is properly rendered on mobile PWA
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        // Small delay to ensure TextField is fully rendered on mobile
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (mounted && _focusNode.canRequestFocus) {
+            _focusNode.requestFocus();
+          }
+        });
+      }
+    });
   }
 
   @override
@@ -71,6 +84,8 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _focusNode.dispose();
+    _controller.dispose();
     // Remove listener to prevent memory leaks
     _appState?.removeListener(_onAppStateChanged);
     super.dispose();
@@ -947,6 +962,11 @@ class _ChatScreenState extends State<ChatScreen> {
             decoration: AppColors.inputDecoration,
             child: TextField(
               controller: _controller,
+              focusNode: _focusNode,
+              keyboardType: TextInputType.multiline,
+              maxLines: null,
+              textCapitalization: TextCapitalization.sentences,
+              enableInteractiveSelection: true,
               decoration: const InputDecoration(
                 hintText: "Type a message...",
                 border: InputBorder.none,
