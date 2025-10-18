@@ -14,6 +14,10 @@ import '../services/firestore_service.dart';
 import '../services/like_cache_service.dart';
 import 'dart:typed_data';
 import '../utils/responsive_utils.dart';
+import 'home_dashboard_screen.dart';
+import 'post_screen.dart';
+import 'albums_screen.dart';
+import 'dm_inbox_screen.dart';
 
 class FeedScreen extends StatefulWidget {
   final bool showLikedOnly;
@@ -727,6 +731,7 @@ class _FeedScreenState extends State<FeedScreen> {
   @override
   Widget build(BuildContext context) {
     final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
+    final isWideScreen = ResponsiveUtils.isWideScreen(context);
     
     return Scaffold(
       body: Container(
@@ -735,10 +740,95 @@ class _FeedScreenState extends State<FeedScreen> {
           gradient: AppColors.mainGradient,
         ),
         child: SafeArea(
-          child: ResponsiveUtils.isWideScreen(context) 
+          child: isWideScreen
               ? _buildDesktopLayout(context, currentUser)
               : _buildMobileLayout(context, currentUser),
         ),
+      ),
+      bottomNavigationBar: isWideScreen ? null : _buildBottomNavigationBar(),
+    );
+  }
+
+  Widget _buildBottomNavigationBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.black,
+        border: Border(
+          top: BorderSide(color: Colors.grey[800]!, width: 0.5),
+        ),
+      ),
+      child: BottomNavigationBar(
+        backgroundColor: Colors.black,
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: Colors.white,
+        unselectedItemColor: Colors.grey[600],
+        currentIndex: 3, // Feed screen index
+        onTap: (index) {
+          // Handle navigation based on selected index
+          switch (index) {
+            case 0:
+              // Home - navigate to HomeDashboardScreen
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const HomeDashboardScreen(isCurrentUser: true),
+                ),
+              );
+              break;
+            case 1:
+              // Post - navigate to PostScreen
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const PostScreen(),
+                ),
+              );
+              break;
+            case 2:
+              // Albums - navigate to AlbumsScreen
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const AlbumsScreen(),
+                ),
+              );
+              break;
+            case 3:
+              // Feed - stay on current screen (FeedScreen)
+              break;
+            case 4:
+              // Messages - navigate to DMInboxScreen
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const DMInboxScreen(),
+                ),
+              );
+              break;
+          }
+        },
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.create),
+            label: 'Post',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.photo_library),
+            label: 'Albums',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.rss_feed),
+            label: 'Feed',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.message),
+            label: 'Messages',
+          ),
+        ],
       ),
     );
   }

@@ -15,6 +15,7 @@ import 'post_screen.dart';
 import 'albums_screen.dart';
 import 'feed_screen.dart';
 import 'login_screen.dart';
+import 'dm_inbox_screen.dart';
 import '../widgets/nav_drawer.dart';
 
 class HomeDashboardScreen extends StatefulWidget {
@@ -2673,6 +2674,15 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                 ),
               );
               break;
+            case 4:
+              // Messages - navigate to DMInboxScreen
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const DMInboxScreen(),
+                ),
+              );
+              break;
           }
         },
         items: const [
@@ -2691,6 +2701,10 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.rss_feed),
             label: 'Feed',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.message),
+            label: 'Messages',
           ),
         ],
       ),
