@@ -36,7 +36,6 @@ class _PostScreenState extends State<PostScreen> {
   bool _isLoading = false;
   final Map<String, String> _usernames = {};
   final Map<String, String?> _avatarUrls = {}; // Cache for avatar URLs
-  bool _isFollowedUsersExpanded = false; // Track if followed users list is expanded
   final ScrollController _scrollController = ScrollController();
   bool _isLoadingMore = false;
   bool _hasMoreData = true;
@@ -263,10 +262,8 @@ class _PostScreenState extends State<PostScreen> {
       }
     }
 
-    // Sort posts: followed users first, then by timestamp
+    // Sort posts by timestamp (newest first)
     loadedPosts.sort((a, b) {
-      if (a.isFollowing && !b.isFollowing) return -1;
-      if (!a.isFollowing && b.isFollowing) return 1;
       return b.timestamp.compareTo(a.timestamp);
     });
 
@@ -1256,7 +1253,7 @@ class _PostScreenState extends State<PostScreen> {
                   ),
                   child: TextFormField(
                     controller: _descriptionController,
-                    maxLines: 5,
+                    maxLines: 2,
                     decoration: InputDecoration(
                       hintText: 'What\'s happening in the ReptiWorld?',
                       hintStyle: TextStyle(
@@ -1333,7 +1330,7 @@ class _PostScreenState extends State<PostScreen> {
             ),
             child: TextFormField(
               controller: _descriptionController,
-              maxLines: 4,
+              maxLines: 2,
               decoration: InputDecoration(
                 hintText: 'What\'s happening in the ReptiWorld?',
                 hintStyle: TextStyle(
@@ -1393,151 +1390,6 @@ class _PostScreenState extends State<PostScreen> {
   Widget _buildPostsFeed(BuildContext context, AppState appState, double? postWidth) {
     return Column(
       children: [
-        // Follow summary section
-        FutureBuilder<List<String>>(
-          key: const ValueKey('following_section'),
-          future: FirebaseAuth.instance.currentUser != null 
-              ? FirestoreService.getFollowedUserIds(FirebaseAuth.instance.currentUser!.uid)
-                  .catchError((e) {
-                    print('DEBUG: Could not fetch follow count: $e');
-                    return <String>[];
-                  })
-              : Future.value([]),
-          builder: (context, snapshot) {
-            final followedUserIds = snapshot.data ?? [];
-            final followingCount = followedUserIds.length;
-            
-            return StatefulBuilder(
-              builder: (context, setLocalState) {
-                return GestureDetector(
-                  onTap: () {
-                    setLocalState(() {
-                      _isFollowedUsersExpanded = !_isFollowedUsersExpanded;
-                    });
-                    // Also update the main state to ensure consistency
-                    setState(() {});
-                  },
-                  child: Container(
-                    width: postWidth,
-                    margin: const EdgeInsets.only(bottom: 16),
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Colors.brown[50]!, Colors.brown[100]!],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: AppColors.pillShape,
-                      border: Border.all(color: Colors.brown[200]!),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.people_outline,
-                              color: Colors.brown[600],
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Following $followingCount users',
-                              style: TextStyle(
-                                color: Colors.brown[700],
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            const Spacer(),
-                            if (_isFollowedUsersExpanded)
-                              Icon(
-                                Icons.keyboard_arrow_up,
-                                color: Colors.brown[600],
-                                size: 20,
-                              )
-                            else
-                              Icon(
-                                Icons.keyboard_arrow_down,
-                                color: Colors.brown[600],
-                                size: 20,
-                              ),
-                          ],
-                        ),
-                        // Show followed usernames only when expanded
-                        if (_isFollowedUsersExpanded) ...[
-                          const SizedBox(height: 16),
-                          if (followedUserIds.isEmpty)
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.grey[100],
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                'You are not following any users yet',
-                                style: TextStyle(
-                                  color: Colors.grey[600],
-                                  fontSize: 12,
-                                  fontStyle: FontStyle.italic,
-                                ),
-                              ),
-                            )
-                          else
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Text(
-                                      'Following:',
-                                      style: TextStyle(
-                                        color: Colors.brown,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      '(${followedUserIds.length} total)',
-                                      style: TextStyle(
-                                        color: Colors.brown[600],
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                // Usernames list
-                                ...followedUserIds.map((userId) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 4.0),
-                                  child: Row(
-                                    children: [
-                                      _buildUserAvatar(userId),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          _usernames[userId] ?? 'Loading...',
-                                          style: const TextStyle(
-                                            color: Colors.brown,
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                )).toList(),
-                              ],
-                            ),
-                        ],
-                      ],
-                    ),
-                  ),
-                );
-              },
-            );
-          },
-        ),
         // Posts list
         Expanded(
           child: ListView.builder(
