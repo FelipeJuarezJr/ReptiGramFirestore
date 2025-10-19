@@ -11,6 +11,8 @@ import '../utils/responsive_utils.dart';
 import '../state/app_state.dart';
 import '../state/dark_mode_provider.dart';
 import '../services/firestore_service.dart';
+import '../services/like_cache_service.dart';
+import '../models/photo_data.dart';
 import 'post_screen.dart';
 import 'albums_screen.dart';
 import 'feed_screen.dart';
@@ -105,6 +107,11 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         // Load current user data for profile picture and background
         _loadCurrentUserData();
       }
+      
+      // Set loading state immediately to show loading indicator
+      setState(() {
+        _isLoadingUserPhotos = true;
+      });
       
       // Add a delay to ensure Firestore is fully initialized
       Future.delayed(const Duration(seconds: 2), () {
@@ -924,7 +931,10 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
           final binderName = data['binderName'];
           final notebookName = data['notebookName'];
           
-          // Include all photos regardless of source
+          // Get cached like data from photo document
+          final likeData = LikeCacheService.getCachedLikeData(data, currentUser.uid);
+          
+          // Include all photos regardless of source with like data
           newPhotos.add({
             'id': doc.id,
             ...data,
@@ -932,6 +942,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
             'albumName': albumName,
             'binderName': binderName,
             'notebookName': notebookName,
+            'isLiked': likeData['isLiked'] as bool,
+            'likesCount': likeData['likesCount'] as int,
           });
         }
       }
@@ -980,6 +992,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
       if (mounted) {
         setState(() {
           _isLoadingUserPhotos = true;
+          _userPhotos = []; // Clear previous user's photos immediately
         });
       }
 
@@ -1003,12 +1016,20 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
           print('   - source: ${data['source']}');
           print('   - albumName: ${data['albumName']}');
 
-          // Add source information for display
+          // Get cached like data from photo document
+          final currentUser = FirebaseAuth.instance.currentUser;
+          final likeData = currentUser != null 
+              ? LikeCacheService.getCachedLikeData(data, currentUser.uid)
+              : {'isLiked': false, 'likesCount': 0};
+
+          // Add source information for display with like data
           newPhotos.add({
             'id': doc.id,
             ...data,
             'sourceLabel': _getSourceLabel(data),
             'sourceColor': _getSourceColor(data),
+            'isLiked': likeData['isLiked'] as bool,
+            'likesCount': likeData['likesCount'] as int,
           });
         }
       }
@@ -2076,6 +2097,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   }
 
   Widget _buildUserPhotosGrid() {
+    // Show loading indicator if we're loading and have no photos yet
     if (_isLoadingUserPhotos && _userPhotos.isEmpty) {
       return const Center(
         child: CircularProgressIndicator(
@@ -2084,7 +2106,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
       );
     }
 
-    if (_userPhotos.isEmpty && !_isLoadingUserPhotos) {
+    // Only show "No photos yet" if we're NOT loading and truly have no photos
+    if (!_isLoadingUserPhotos && _userPhotos.isEmpty) {
       return const Center(
         child: Column(
           children: [
@@ -2208,13 +2231,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
 
     return GestureDetector(
       onTap: () {
-        // TODO: Navigate to photo detail view
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Viewing: $title'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
+        // Navigate to full-screen photo view
+        _showFullScreenPhoto(photo);
       },
       child: Container(
         decoration: BoxDecoration(
@@ -2352,6 +2370,88 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         ),
       ),
     );
+  }
+
+  void _showFullScreenPhoto(Map<String, dynamic> photo) {
+    // Convert photo data to PhotoData model for full-screen view
+    // Handle timestamp conversion from Firestore Timestamp to int
+    int timestamp;
+    if (photo['timestamp'] is Timestamp) {
+      timestamp = (photo['timestamp'] as Timestamp).millisecondsSinceEpoch;
+    } else if (photo['timestamp'] is int) {
+      timestamp = photo['timestamp'] as int;
+    } else {
+      timestamp = DateTime.now().millisecondsSinceEpoch;
+    }
+    
+    final photoData = PhotoData(
+      id: photo['id'] ?? '',
+      file: null,
+      firebaseUrl: photo['firebaseUrl'] ?? photo['url'],
+      title: photo['title'] ?? 'Photo',
+      comment: photo['comment'] ?? '',
+      isLiked: photo['isLiked'] ?? false,
+      userId: photo['userId'] ?? _effectiveUserId ?? '',
+      timestamp: timestamp,
+      likesCount: photo['likesCount'] ?? 0,
+    );
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (context) => FullScreenPhotoView(
+          photo: photoData,
+          onLikeToggled: _toggleLike,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _toggleLike(PhotoData photo) async {
+    final appState = Provider.of<AppState>(context, listen: false);
+    final currentUser = appState.currentUser;
+    
+    if (currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please log in to like photos')),
+      );
+      return;
+    }
+
+    try {
+      // Optimistic update
+      setState(() {
+        photo.isLiked = !photo.isLiked;
+        photo.likesCount += photo.isLiked ? 1 : -1;
+      });
+
+      // Update cached like data in photo document
+      await LikeCacheService.updatePhotoLikeCache(
+        photoId: photo.id,
+        userId: currentUser.uid,
+        isLiked: photo.isLiked,
+      );
+
+      // Update the photo in _userPhotos list
+      final photoIndex = _userPhotos.indexWhere((p) => p['id'] == photo.id);
+      if (photoIndex != -1) {
+        setState(() {
+          _userPhotos[photoIndex]['isLiked'] = photo.isLiked;
+          _userPhotos[photoIndex]['likesCount'] = photo.likesCount;
+        });
+      }
+
+    } catch (e) {
+      // Revert on error
+      setState(() {
+        photo.isLiked = !photo.isLiked;
+        photo.likesCount += photo.isLiked ? 1 : -1;
+      });
+      print('Error toggling like: ${e.toString()}');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update like: ${e.toString()}')),
+      );
+    }
   }
 
   String _getSourceLabel(Map<String, dynamic> photo) {
