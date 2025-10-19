@@ -53,6 +53,13 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    print('🟣 ========== CHAT SCREEN INIT ==========');
+    print('🟣 Current user UID: ${currentUser.uid}');
+    print('🟣 Peer UID: ${widget.peerUid}');
+    print('🟣 Peer Name: ${widget.peerName}');
+    print('🟣 Conversation ID: ${widget.conversationId}');
+    print('🟣 Peer Name from Conversation: ${widget.peerNameFromConversation}');
+    
     // Mark messages as read when opening the chat
     _markMessagesAsRead();
     // Load initial messages with pagination
@@ -71,6 +78,7 @@ class _ChatScreenState extends State<ChatScreen> {
         });
       }
     });
+    print('🟣 ========== END CHAT SCREEN INIT ==========');
   }
 
   @override
@@ -111,6 +119,10 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _loadInitialMessages() async {
     if (!mounted) return;
     
+    print('🟣 ========== LOAD INITIAL MESSAGES DEBUG ==========');
+    print('🟣 Conversation ID: ${widget.conversationId}');
+    print('🟣 Peer UID: ${widget.peerUid}');
+    
     setState(() {
       _isLoadingMessages = true;
       _messages.clear();
@@ -127,9 +139,12 @@ class _ChatScreenState extends State<ChatScreen> {
         cacheKey = _chatService.getChatId(currentUser.uid, widget.peerUid!);
       }
 
+      print('🟣 Cache key: $cacheKey');
+
       List<ChatMessage>? cachedMessages;
       if (cacheKey != null) {
         cachedMessages = await MessageCacheService.getCachedMessages(cacheKey);
+        print('🟣 Cached messages found: ${cachedMessages?.length ?? 0}');
       }
 
       // Load from server
@@ -137,22 +152,27 @@ class _ChatScreenState extends State<ChatScreen> {
       
       if (widget.conversationId != null) {
         // New conversation-based approach
+        print('🟣 Loading messages by conversation ID...');
         result = await _chatService.getMessagesByConversationIdPaginated(
           widget.conversationId!,
           limit: 50,
         );
       } else if (widget.peerUid != null) {
         // Old approach for backward compatibility
+        print('🟣 Loading messages by peer UID...');
         result = await _chatService.getMessagesPaginated(
           currentUser.uid,
           widget.peerUid!,
           limit: 50,
         );
       } else {
+        print('❌ No conversation ID or peer UID provided!');
         return;
       }
 
       final serverMessages = List<ChatMessage>.from(result['messages']);
+      print('🟣 Server messages loaded: ${serverMessages.length}');
+      print('🟣 Has more messages: ${result['hasMore']}');
 
       if (mounted) {
         setState(() {
@@ -166,10 +186,14 @@ class _ChatScreenState extends State<ChatScreen> {
         // Cache the messages for offline access
         if (cacheKey != null && serverMessages.isNotEmpty) {
           await MessageCacheService.cacheMessages(cacheKey, serverMessages);
+          print('🟣 Messages cached successfully');
         }
       }
+      print('🟣 ========== END LOAD INITIAL MESSAGES DEBUG ==========');
     } catch (e) {
-      print('Error loading initial messages: $e');
+      print('❌ Error loading initial messages: $e');
+      print('❌ Error type: ${e.runtimeType}');
+      print('❌ Stack trace: ${StackTrace.current}');
       
       // If server fails, try to show cached messages
       String? cacheKey;
@@ -182,6 +206,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (cacheKey != null) {
         final cachedMessages = await MessageCacheService.getCachedMessages(cacheKey);
         if (mounted && cachedMessages != null) {
+          print('🟣 Using cached messages: ${cachedMessages.length}');
           setState(() {
             _messages = cachedMessages;
             _isLoadingMessages = false;

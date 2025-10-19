@@ -36,6 +36,7 @@ class _DMInboxScreenState extends State<DMInboxScreen> {
   @override
   void initState() {
     super.initState();
+    print('🟢 DM Inbox Screen initialized');
     _loadConversations();
     // Add scroll listener for infinite scroll
     _scrollController.addListener(_onScroll);
@@ -113,6 +114,10 @@ class _DMInboxScreenState extends State<DMInboxScreen> {
   Future<void> _loadConversations({bool resetPagination = true}) async {
     final currentUser = FirebaseAuth.instance.currentUser!;
     
+    print('🟢 ========== LOAD CONVERSATIONS DEBUG ==========');
+    print('🟢 Current user UID: ${currentUser.uid}');
+    print('🟢 Reset pagination: $resetPagination');
+    
     try {
       setState(() {
         _isLoading = true;
@@ -122,8 +127,10 @@ class _DMInboxScreenState extends State<DMInboxScreen> {
         _conversations.clear();
         _lastConversationDocument = null;
         _hasMoreConversations = true;
+        print('🟢 Reset pagination - cleared conversations list');
       }
 
+      print('🟢 Loading conversations from Firestore...');
       // Use paginated conversation loading
       final conversationData = await _chatService.getConversationsPaginated(
         currentUserId: currentUser.uid,
@@ -131,10 +138,12 @@ class _DMInboxScreenState extends State<DMInboxScreen> {
         lastDocument: _lastConversationDocument,
       );
 
+      print('🟢 Received ${conversationData.length} conversations from Firestore');
       final List<ConversationData> conversations = [];
 
       for (final convData in conversationData) {
         final otherParticipantId = convData['otherParticipantId'] as String;
+        print('🟢 Processing conversation with participant: $otherParticipantId');
         
         // Get the other participant's user data
         final userDoc = await FirebaseFirestore.instance
@@ -149,6 +158,8 @@ class _DMInboxScreenState extends State<DMInboxScreen> {
                       userData['name'] ?? 
                       'No Name';
           
+          print('🟢   - User name: $name');
+          
           // Get photo URL using AppState integration
           final avatarUrl = await _getAvatarUrl(otherParticipantId);
 
@@ -161,11 +172,15 @@ class _DMInboxScreenState extends State<DMInboxScreen> {
             lastTimestamp: convData['lastTimestamp'] as int,
             unreadCount: convData['unreadCount'] as int,
           ));
+          print('🟢   - Added conversation to list');
+        } else {
+          print('🟡   - User document not found for: $otherParticipantId');
         }
       }
 
       // Sort conversations by lastTimestamp in descending order (most recent first)
       conversations.sort((a, b) => b.lastTimestamp.compareTo(a.lastTimestamp));
+      print('🟢 Sorted ${conversations.length} conversations by timestamp');
 
       if (mounted) {
         setState(() {
@@ -173,9 +188,13 @@ class _DMInboxScreenState extends State<DMInboxScreen> {
           _hasMoreConversations = conversationData.length == 20;
           _isLoading = false;
         });
+        print('🟢 Updated state with ${_conversations.length} total conversations');
       }
+      print('🟢 ========== END LOAD CONVERSATIONS DEBUG ==========');
     } catch (e) {
-      print('Error loading conversations: $e');
+      print('❌ Error loading conversations: $e');
+      print('❌ Error type: ${e.runtimeType}');
+      print('❌ Stack trace: ${StackTrace.current}');
       if (mounted) {
         setState(() {
           _isLoading = false;

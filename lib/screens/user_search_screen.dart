@@ -166,13 +166,17 @@ class _UserSearchScreenState extends State<UserSearchScreen> {
   Future<void> _startConversation(UserSearchData user) async {
     final currentUser = FirebaseAuth.instance.currentUser!;
     
+    print('🔵 ========== START CONVERSATION DEBUG ==========');
+    print('🔵 Current user UID: ${currentUser.uid}');
+    print('🔵 Current user email: ${currentUser.email}');
+    print('🔵 Target user UID: ${user.uid}');
+    print('🔵 Target user name: ${user.name}');
+    
     try {
       // Check if conversation already exists
       final conversationId = _chatService.getChatId(currentUser.uid, user.uid);
-      print('Creating conversation with ID: $conversationId');
-      print('Current user UID: ${currentUser.uid}');
-      print('Target user UID: ${user.uid}');
-      print('Conversation ID length: ${conversationId.length}');
+      print('🔵 Conversation ID: $conversationId');
+      print('🔵 Conversation ID length: ${conversationId.length}');
       
       // Validate conversation ID
       if (conversationId.isEmpty) {
@@ -183,15 +187,18 @@ class _UserSearchScreenState extends State<UserSearchScreen> {
       }
       
       // Check if conversation exists
+      print('🔵 Checking if conversation exists...');
       final conversationDoc = await FirebaseFirestore.instance
           .collection('conversations')
           .doc(conversationId)
           .get();
+      
+      print('🔵 Conversation exists: ${conversationDoc.exists}');
 
       String finalConversationId = conversationId;
       
       if (!conversationDoc.exists) {
-        print('Conversation does not exist, creating new one...');
+        print('🔵 Conversation does not exist, creating new one...');
         // Create new conversation
         final conversationData = {
           'participants': [currentUser.uid, user.uid],
@@ -200,30 +207,53 @@ class _UserSearchScreenState extends State<UserSearchScreen> {
           'unreadCount': 0,
           'createdAt': FieldValue.serverTimestamp(),
         };
-        print('Creating conversation with data: $conversationData');
+        print('🔵 Conversation data to create:');
+        print('🔵   - participants: ${conversationData['participants']}');
+        print('🔵   - lastMessage: ${conversationData['lastMessage']}');
+        print('🔵   - lastTimestamp: ${conversationData['lastTimestamp']}');
+        print('🔵   - unreadCount: ${conversationData['unreadCount']}');
+        print('🔵   - createdAt: serverTimestamp');
         
         try {
+          print('🔵 Attempting to create conversation in Firestore...');
           await FirebaseFirestore.instance
               .collection('conversations')
               .doc(conversationId)
               .set(conversationData);
-          print('Conversation created successfully');
+          print('✅ Conversation created successfully!');
         } catch (createError) {
-          print('Error creating conversation document: $createError');
+          print('❌ Error creating conversation document:');
+          print('❌ Error type: ${createError.runtimeType}');
+          print('❌ Error message: $createError');
+          print('❌ Error toString: ${createError.toString()}');
+          
           // Try to get more details about the error
           if (createError.toString().contains('permission-denied')) {
-            print('Permission denied - checking if user is authenticated...');
-            print('Current user: ${currentUser.uid}');
-            print('Is user authenticated: ${currentUser.uid.isNotEmpty}');
+            print('❌ PERMISSION DENIED ERROR DETECTED');
+            print('❌ Current user UID: ${currentUser.uid}');
+            print('❌ Is user authenticated: ${currentUser.uid.isNotEmpty}');
+            print('❌ Auth token: ${await currentUser.getIdToken()}');
+            
+            // Try to read the user's own document to verify permissions
+            try {
+              final userDoc = await FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(currentUser.uid)
+                  .get();
+              print('❌ Can read own user document: ${userDoc.exists}');
+            } catch (readError) {
+              print('❌ Cannot read own user document: $readError');
+            }
           }
           rethrow;
         }
       } else {
-        print('Conversation already exists');
+        print('🔵 Conversation already exists, loading...');
       }
 
       // Navigate to chat screen
       if (mounted) {
+        print('🔵 Navigating to chat screen...');
         await Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -233,13 +263,20 @@ class _UserSearchScreenState extends State<UserSearchScreen> {
             ),
           ),
         );
+        print('✅ Successfully navigated to chat screen');
       }
+      print('🔵 ========== END START CONVERSATION DEBUG ==========');
     } catch (e) {
-      print('Error starting conversation: $e');
+      print('❌ ========== ERROR IN START CONVERSATION ==========');
+      print('❌ Error: $e');
+      print('❌ Error type: ${e.runtimeType}');
+      print('❌ Stack trace: ${StackTrace.current}');
+      print('❌ ================================================');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error starting conversation: $e'),
           backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
         ),
       );
     }
