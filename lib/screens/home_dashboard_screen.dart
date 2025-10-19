@@ -1202,7 +1202,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
           if (_showSearchResults) _buildSearchOverlay(),
         ],
       ),
-      bottomNavigationBar: widget.isCurrentUser ? _buildBottomNavigationBar() : null,
+      bottomNavigationBar: _buildBottomNavigationBar(),
     );
   }
 
@@ -2745,7 +2745,15 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
           // Handle navigation based on selected index
           switch (index) {
             case 0:
-              // Home - stay on current screen (HomeDashboardScreen)
+              // Home - navigate to current user's dashboard
+              if (!widget.isCurrentUser) {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const HomeDashboardScreen(isCurrentUser: true),
+                  ),
+                );
+              }
               break;
             case 1:
               // Post - navigate to PostScreen
