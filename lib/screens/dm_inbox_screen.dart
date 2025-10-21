@@ -7,6 +7,7 @@ import 'user_search_screen.dart';
 import '../services/chat_service.dart';
 import '../services/firestore_service.dart';
 import '../state/app_state.dart';
+import '../state/dark_mode_provider.dart';
 import '../styles/colors.dart';
 import '../utils/responsive_utils.dart';
 import 'dart:async';
@@ -247,12 +248,15 @@ class _DMInboxScreenState extends State<DMInboxScreen> {
   @override
   Widget build(BuildContext context) {
     final isWideScreen = ResponsiveUtils.isWideScreen(context);
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
+    
+    print('💬 DMInboxScreen: build() called - isDarkMode: ${darkModeProvider.isDarkMode}');
     
     return Scaffold(
       appBar: AppBar(
         title: const Text('Messages'),
-        backgroundColor: AppColors.titleText,
-        foregroundColor: Colors.white,
+        backgroundColor: darkModeProvider.isDarkMode ? AppColors.darkCardBackground : AppColors.titleText,
+        foregroundColor: darkModeProvider.isDarkMode ? AppColors.darkText : Colors.white,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -270,8 +274,8 @@ class _DMInboxScreenState extends State<DMInboxScreen> {
               : _buildConversationsList(),
       floatingActionButton: FloatingActionButton(
         onPressed: _openSearchScreen,
-        backgroundColor: AppColors.titleText,
-        foregroundColor: Colors.white,
+        backgroundColor: darkModeProvider.isDarkMode ? AppColors.darkCardBackground : AppColors.titleText,
+        foregroundColor: darkModeProvider.isDarkMode ? AppColors.darkText : Colors.white,
         child: const Icon(Icons.add),
         tooltip: 'New Message',
       ),
@@ -280,18 +284,22 @@ class _DMInboxScreenState extends State<DMInboxScreen> {
   }
 
   Widget _buildBottomNavigationBar() {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
     return Container(
       decoration: BoxDecoration(
-        color: Colors.black,
+        color: darkModeProvider.isDarkMode ? AppColors.darkBackground : Colors.white,
         border: Border(
-          top: BorderSide(color: Colors.grey[800]!, width: 0.5),
+          top: BorderSide(
+            color: darkModeProvider.isDarkMode ? AppColors.darkCardBorder : Colors.grey[300]!,
+            width: 0.5,
+          ),
         ),
       ),
       child: BottomNavigationBar(
-        backgroundColor: Colors.black,
+        backgroundColor: darkModeProvider.isDarkMode ? AppColors.darkBackground : Colors.white,
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: Colors.white,
-        unselectedItemColor: Colors.grey[600],
+        selectedItemColor: darkModeProvider.isDarkMode ? AppColors.darkText : AppColors.titleText,
+        unselectedItemColor: darkModeProvider.isDarkMode ? AppColors.darkTextSecondary : Colors.grey[600],
         currentIndex: 4, // Messages screen index
         onTap: (index) {
           // Handle navigation based on selected index

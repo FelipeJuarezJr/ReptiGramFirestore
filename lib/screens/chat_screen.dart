@@ -11,6 +11,7 @@ import '../services/firestore_service.dart';
 import '../services/message_cache_service.dart';
 import '../services/avatar_cache_service.dart';
 import '../state/app_state.dart';
+import '../state/dark_mode_provider.dart';
 import '../styles/colors.dart';
 import '../utils/responsive_utils.dart';
 
@@ -591,11 +592,15 @@ class _ChatScreenState extends State<ChatScreen> {
     print('ChatScreen: widget.peerUid = ${widget.peerUid}');
     print('ChatScreen: widget.peerName = ${widget.peerName}');
     
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
+    
+    print('💬 ChatScreen: build() called - isDarkMode: ${darkModeProvider.isDarkMode}');
+    
     return Scaffold(
       appBar: AppBar(
         title: Text("Chat with ${widget.peerNameFromConversation ?? widget.peerName ?? 'Unknown'}"),
-        backgroundColor: AppColors.titleText,
-        foregroundColor: Colors.white,
+        backgroundColor: darkModeProvider.isDarkMode ? AppColors.darkCardBackground : AppColors.titleText,
+        foregroundColor: darkModeProvider.isDarkMode ? AppColors.darkText : Colors.white,
       ),
       body: ResponsiveUtils.isWideScreen(context) 
           ? _buildDesktopLayout(context)

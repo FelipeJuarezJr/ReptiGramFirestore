@@ -195,7 +195,7 @@ class _NavDrawerState extends State<NavDrawer> {
         : (widget.userName ?? user?.displayName ?? 'User');
     
     return Drawer(
-      backgroundColor: darkModeProvider.isDarkMode ? Colors.grey[900] : Colors.white,
+      backgroundColor: darkModeProvider.isDarkMode ? AppColors.darkCardBackground : Colors.white,
       child: ListView(
         padding: EdgeInsets.zero,
         children: <Widget>[
@@ -215,15 +215,7 @@ class _NavDrawerState extends State<NavDrawer> {
       height: 200,
       decoration: BoxDecoration(
         gradient: darkModeProvider.isDarkMode 
-            ? LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.grey[800]!,
-                  Colors.grey[900]!,
-                  Colors.black,
-                ],
-              )
+            ? AppColors.darkModeGradient
             : AppColors.mainGradient,
       ),
       child: Padding(
@@ -368,15 +360,7 @@ class _NavDrawerState extends State<NavDrawer> {
     return DrawerHeader(
       decoration: BoxDecoration(
         gradient: darkModeProvider.isDarkMode 
-            ? LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.grey[800]!,
-                  Colors.grey[900]!,
-                  Colors.black,
-                ],
-              )
+            ? AppColors.darkModeGradient
             : AppColors.mainGradient,
       ),
       child: Row(
@@ -542,7 +526,7 @@ class _NavDrawerState extends State<NavDrawer> {
             title: 'Settings',
             subtitle: 'Manage your account',
             onTap: () {
-              Navigator.pushReplacement(
+              Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (context) => SettingsScreen(),
@@ -689,7 +673,7 @@ class _NavDrawerState extends State<NavDrawer> {
           leading: Icon(Icons.settings, color: darkModeProvider.isDarkMode ? Colors.white : null),
           title: Text('Settings', style: TextStyle(color: darkModeProvider.isDarkMode ? Colors.white : null)),
           onTap: () {
-            Navigator.pushReplacement(
+            Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (context) => SettingsScreen(),

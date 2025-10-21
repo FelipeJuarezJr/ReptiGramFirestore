@@ -19,15 +19,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final darkModeProvider = Provider.of<DarkModeProvider>(context);
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
     final user = _auth.currentUser;
     final isGoogleUser = user?.providerData.any((p) => p.providerId == 'google.com') ?? false;
 
+    print('🎨 SettingsScreen: build() called - isDarkMode: ${darkModeProvider.isDarkMode}');
+
     return Scaffold(
-      backgroundColor: darkModeProvider.isDarkMode ? Colors.black : Colors.transparent,
       body: Container(
         decoration: darkModeProvider.isDarkMode 
-            ? null 
+            ? const BoxDecoration(
+                color: AppColors.darkBackground,
+              )
             : const BoxDecoration(
                 gradient: AppColors.mainGradient,
               ),
@@ -60,16 +63,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Container(
                   decoration: BoxDecoration(
                     gradient: darkModeProvider.isDarkMode 
-                        ? const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Color(0xFF2D2D2D), // Dark grey
-                              Color(0xFF1A1A1A), // Darker grey
-                              Color(0xFF0F0F0F), // Almost black
-                            ],
-                            stops: [0.0, 0.5, 1.0],
-                          )
+                        ? AppColors.darkModeGradient
                         : const LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
@@ -133,7 +127,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: darkModeProvider.isDarkMode ? Colors.grey[900] : Colors.white,
+                    color: darkModeProvider.isDarkMode ? AppColors.darkCardBackground : Colors.white,
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Column(
@@ -424,9 +418,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _buildSectionHeader('App Settings'),
         ResponsiveUtils.isWideScreen(context)
             ? _buildDesktopSettingTile(
-                'Dark Mode',
-                Icons.dark_mode,
-                'Toggle dark theme',
+                darkModeProvider.isDarkMode ? 'Nocturnal Mode' : 'Diurnal Mode',
+                darkModeProvider.isDarkMode ? Icons.nightlight : Icons.wb_sunny,
+                darkModeProvider.isDarkMode ? 'Night mode active' : 'Day mode active',
                 trailing: Switch(
                   value: darkModeProvider.isDarkMode,
                   onChanged: darkModeProvider.toggleDarkMode,
@@ -434,8 +428,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               )
             : _buildSettingTile(
-                'Dark Mode',
-                Icons.dark_mode,
+                darkModeProvider.isDarkMode ? 'Nocturnal Mode' : 'Diurnal Mode',
+                darkModeProvider.isDarkMode ? Icons.nightlight : Icons.wb_sunny,
                 trailing: Switch(
                   value: darkModeProvider.isDarkMode,
                   onChanged: darkModeProvider.toggleDarkMode,

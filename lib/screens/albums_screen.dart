@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
+import '../state/dark_mode_provider.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -326,13 +327,20 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
   @override
   Widget build(BuildContext context) {
     final isWideScreen = ResponsiveUtils.isWideScreen(context);
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
+    
+    print('📚 AlbumsScreen: build() called - isDarkMode: ${darkModeProvider.isDarkMode}');
     
     return Scaffold(
       body: Container(
         height: MediaQuery.of(context).size.height,
-        decoration: const BoxDecoration(
-          gradient: AppColors.mainGradient,
-        ),
+        decoration: darkModeProvider.isDarkMode 
+            ? const BoxDecoration(
+                color: AppColors.darkBackground,
+              )
+            : const BoxDecoration(
+                gradient: AppColors.mainGradient,
+              ),
         child: SafeArea(
           child: isWideScreen
               ? _buildDesktopLayout(context)
@@ -344,18 +352,22 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
   }
 
   Widget _buildBottomNavigationBar() {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
     return Container(
       decoration: BoxDecoration(
-        color: Colors.black,
+        color: darkModeProvider.isDarkMode ? AppColors.darkBackground : Colors.white,
         border: Border(
-          top: BorderSide(color: Colors.grey[800]!, width: 0.5),
+          top: BorderSide(
+            color: darkModeProvider.isDarkMode ? AppColors.darkCardBorder : Colors.grey[300]!,
+            width: 0.5,
+          ),
         ),
       ),
       child: BottomNavigationBar(
-        backgroundColor: Colors.black,
+        backgroundColor: darkModeProvider.isDarkMode ? AppColors.darkBackground : Colors.white,
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: Colors.white,
-        unselectedItemColor: Colors.grey[600],
+        selectedItemColor: darkModeProvider.isDarkMode ? AppColors.darkText : AppColors.titleText,
+        unselectedItemColor: darkModeProvider.isDarkMode ? AppColors.darkTextSecondary : Colors.grey[600],
         currentIndex: 2, // Albums screen index
         onTap: (index) {
           // Handle navigation based on selected index

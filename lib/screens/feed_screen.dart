@@ -10,6 +10,7 @@ import '../common/header.dart';
 import '../common/title_header.dart';
 import '../models/photo_data.dart';
 import '../state/app_state.dart';
+import '../state/dark_mode_provider.dart';
 import '../services/firestore_service.dart';
 import '../services/like_cache_service.dart';
 import 'dart:typed_data';
@@ -732,13 +733,20 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget build(BuildContext context) {
     final currentUser = Provider.of<AppState>(context, listen: false).currentUser;
     final isWideScreen = ResponsiveUtils.isWideScreen(context);
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
+    
+    print('📰 FeedScreen: build() called - isDarkMode: ${darkModeProvider.isDarkMode}');
     
     return Scaffold(
       body: Container(
         height: MediaQuery.of(context).size.height,
-        decoration: const BoxDecoration(
-          gradient: AppColors.mainGradient,
-        ),
+        decoration: darkModeProvider.isDarkMode 
+            ? const BoxDecoration(
+                color: AppColors.darkBackground,
+              )
+            : const BoxDecoration(
+                gradient: AppColors.mainGradient,
+              ),
         child: SafeArea(
           child: isWideScreen
               ? _buildDesktopLayout(context, currentUser)
@@ -750,18 +758,22 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   Widget _buildBottomNavigationBar() {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
     return Container(
       decoration: BoxDecoration(
-        color: Colors.black,
+        color: darkModeProvider.isDarkMode ? AppColors.darkBackground : Colors.white,
         border: Border(
-          top: BorderSide(color: Colors.grey[800]!, width: 0.5),
+          top: BorderSide(
+            color: darkModeProvider.isDarkMode ? AppColors.darkCardBorder : Colors.grey[300]!,
+            width: 0.5,
+          ),
         ),
       ),
       child: BottomNavigationBar(
-        backgroundColor: Colors.black,
+        backgroundColor: darkModeProvider.isDarkMode ? AppColors.darkBackground : Colors.white,
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: Colors.white,
-        unselectedItemColor: Colors.grey[600],
+        selectedItemColor: darkModeProvider.isDarkMode ? AppColors.darkText : AppColors.titleText,
+        unselectedItemColor: darkModeProvider.isDarkMode ? AppColors.darkTextSecondary : Colors.grey[600],
         currentIndex: 3, // Feed screen index
         onTap: (index) {
           // Handle navigation based on selected index
@@ -1260,13 +1272,17 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
 
   @override
   Widget build(BuildContext context) {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: darkModeProvider.isDarkMode ? AppColors.darkBackground : Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white),
+          icon: Icon(
+            Icons.close,
+            color: darkModeProvider.isDarkMode ? AppColors.darkText : Colors.white,
+          ),
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
@@ -1279,8 +1295,8 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
                   children: [
                     Text(
                       '${widget.photo.likesCount}',
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: darkModeProvider.isDarkMode ? AppColors.darkText : Colors.white,
                         fontSize: 16,
                       ),
                     ),
@@ -1301,7 +1317,9 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
                         padding: const EdgeInsets.all(4.0),
                         child: Icon(
                           widget.photo.isLiked ? Icons.favorite : Icons.favorite_border,
-                          color: widget.photo.isLiked ? Colors.red : Colors.white,
+                          color: widget.photo.isLiked 
+                              ? Colors.red 
+                              : (darkModeProvider.isDarkMode ? AppColors.darkText : Colors.white),
                           size: 24,
                         ),
                       ),
@@ -1320,15 +1338,15 @@ class _FullScreenPhotoViewState extends State<FullScreenPhotoView> {
                       children: [
                         Text(
                           '$commentCount',
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: darkModeProvider.isDarkMode ? AppColors.darkText : Colors.white,
                             fontSize: 16,
                           ),
                         ),
                         const SizedBox(width: 4),
-                        const Icon(
+                        Icon(
                           Icons.comment,
-                          color: Colors.white,
+                          color: darkModeProvider.isDarkMode ? AppColors.darkText : Colors.white,
                           size: 20,
                         ),
                       ],

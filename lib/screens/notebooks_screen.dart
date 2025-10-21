@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
+import '../state/dark_mode_provider.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -268,12 +269,20 @@ class _NotebooksScreenState extends State<NotebooksScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
+    
+    print('📓 NotebooksScreen: build() called - isDarkMode: ${darkModeProvider.isDarkMode}');
+    
     return Scaffold(
       body: Container(
         height: MediaQuery.of(context).size.height,
-        decoration: const BoxDecoration(
-          gradient: AppColors.mainGradient,
-        ),
+        decoration: darkModeProvider.isDarkMode 
+            ? const BoxDecoration(
+                color: AppColors.darkBackground,
+              )
+            : const BoxDecoration(
+                gradient: AppColors.mainGradient,
+              ),
         child: SafeArea(
           child: ResponsiveUtils.isWideScreen(context) 
               ? _buildDesktopLayout(context)

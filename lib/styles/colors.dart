@@ -22,6 +22,15 @@ class AppColors {
   static const Color loginGradientStart = Color(0xFFfbf477);  // Yellow
   static const Color loginGradientEnd = Color(0xFF1d3642);    // Dark blue-gray
 
+  // Dark Mode Colors (based on dashboard theme)
+  static const Color darkBackground = Color(0xFF000000); // Black background
+  static const Color darkCardBackground = Color(0xFF1A1A1A); // Dark grey for cards
+  static const Color darkCardBorder = Color(0xFF2D2D2D); // Border color for cards
+  static const Color darkText = Color(0xFFFFFFFF); // White text
+  static const Color darkTextSecondary = Color(0xFFB0B0B0); // Light grey text
+  static const Color darkGradientStart = Color(0xFF8B5CF6); // Purple
+  static const Color darkGradientEnd = Color(0xFF06B6D4); // Cyan
+
   // Border radius
   static final BorderRadius pillShape = BorderRadius.circular(25.0);
 
@@ -72,6 +81,50 @@ class AppColors {
     ],
     stops: [0.0, 0.4, 1.0],
   );
+
+  // Dark Mode Gradients
+  static const Gradient darkModeGradient = LinearGradient(
+    begin: Alignment.centerLeft,
+    end: Alignment.centerRight,
+    colors: [
+      darkGradientStart,
+      darkGradientEnd,
+    ],
+  );
+
+  static const Gradient darkModeGradientVertical = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [
+      darkGradientStart,
+      darkGradientEnd,
+    ],
+  );
+
+  // Dark mode helper methods
+  static Color getBackgroundColor(bool isDarkMode) {
+    return isDarkMode ? darkBackground : Colors.transparent;
+  }
+
+  static Color getCardBackgroundColor(bool isDarkMode) {
+    return isDarkMode ? darkCardBackground : Colors.white;
+  }
+
+  static Color getCardBorderColor(bool isDarkMode) {
+    return isDarkMode ? darkCardBorder : Colors.grey[300]!;
+  }
+
+  static Color getTextColor(bool isDarkMode) {
+    return isDarkMode ? darkText : titleText;
+  }
+
+  static Color getTextSecondaryColor(bool isDarkMode) {
+    return isDarkMode ? darkTextSecondary : Colors.grey[600]!;
+  }
+
+  static Gradient getBackgroundGradient(bool isDarkMode) {
+    return isDarkMode ? darkModeGradient : mainGradient;
+  }
 
   // Input decoration theme
   static final InputDecorationTheme inputDecorationTheme = InputDecorationTheme(

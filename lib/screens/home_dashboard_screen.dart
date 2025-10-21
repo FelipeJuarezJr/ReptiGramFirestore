@@ -1173,6 +1173,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
       builder: (context, appState, darkModeProvider, child) {
         final currentUser = appState.currentUser;
         
+        print('🏠 HomeDashboardScreen: build() called - isDarkMode: ${darkModeProvider.isDarkMode}');
+        
         // If user is not authenticated, redirect to login
         if (currentUser == null) {
           return const LoginScreen();
@@ -1186,23 +1188,31 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   Widget _buildMainContent(BuildContext context, DarkModeProvider darkModeProvider) {
     return Scaffold(
       key: _scaffoldKey,
-      backgroundColor: Colors.black,
       drawer: widget.isCurrentUser ? NavDrawer(
         userEmail: FirebaseAuth.instance.currentUser?.email,
         userName: FirebaseAuth.instance.currentUser?.displayName,
         userPhotoUrl: FirebaseAuth.instance.currentUser?.photoURL,
       ) : null,
-      body: Stack(
-        children: [
-          SafeArea(
-            child: ResponsiveUtils.isWideScreen(context) 
-                ? _buildDesktopLayout(context)
-                : _buildMobileLayout(context),
-          ),
-          if (_showSearchResults) _buildSearchOverlay(),
-        ],
+      body: Container(
+        decoration: darkModeProvider.isDarkMode 
+            ? const BoxDecoration(
+                color: AppColors.darkBackground,
+              )
+            : const BoxDecoration(
+                gradient: AppColors.mainGradient,
+              ),
+        child: Stack(
+          children: [
+            SafeArea(
+              child: ResponsiveUtils.isWideScreen(context) 
+                  ? _buildDesktopLayout(context)
+                  : _buildMobileLayout(context),
+            ),
+            if (_showSearchResults) _buildSearchOverlay(),
+          ],
+        ),
       ),
-      bottomNavigationBar: _buildBottomNavigationBar(),
+      bottomNavigationBar: _buildBottomNavigationBar(darkModeProvider),
     );
   }
 
@@ -1683,16 +1693,17 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   }
 
   Widget _buildCurrentUserFollowingSection() {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
     // Use real followed users from Firestore
     final followingUsers = _followedUsers;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Following',
           style: TextStyle(
-            color: Colors.white,
+            color: darkModeProvider.isDarkMode ? AppColors.darkText : Colors.white,
             fontSize: 20,
             fontWeight: FontWeight.bold,
           ),
@@ -1755,25 +1766,26 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                       );
                     },
                   ),
-                  // Right fade indicator
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    bottom: 0,
-                    child: Container(
-                      width: 20,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                          colors: [
-                            Colors.transparent,
-                            Colors.black.withOpacity(0.8),
-                          ],
+                  // Right fade indicator - only show in dark mode
+                  if (darkModeProvider.isDarkMode)
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      bottom: 0,
+                      child: Container(
+                        width: 20,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                            colors: [
+                              Colors.transparent,
+                              Colors.black.withOpacity(0.8),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),
@@ -1927,13 +1939,14 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   }
 
   Widget _buildOtherUserFollowingSection() {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Following',
           style: TextStyle(
-            color: Colors.white,
+            color: darkModeProvider.isDarkMode ? AppColors.darkText : Colors.white,
             fontSize: 20,
             fontWeight: FontWeight.bold,
           ),
@@ -1942,9 +1955,12 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.grey[900],
+            color: darkModeProvider.isDarkMode ? AppColors.darkCardBackground : Colors.white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey[700]!, width: 0.5),
+            border: Border.all(
+              color: darkModeProvider.isDarkMode ? AppColors.darkCardBorder : Colors.grey[300]!,
+              width: 0.5,
+            ),
           ),
           child: Column(
             children: [
@@ -2061,13 +2077,14 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   }
 
   Widget _buildTerrariumSection() {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Terrarium',
           style: TextStyle(
-            color: Colors.white,
+            color: darkModeProvider.isDarkMode ? AppColors.darkText : Colors.white,
             fontSize: 20,
             fontWeight: FontWeight.bold,
           ),
@@ -2079,13 +2096,14 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   }
 
   Widget _buildOtherUserTerrariumSection() {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Terrarium',
           style: TextStyle(
-            color: Colors.white,
+            color: darkModeProvider.isDarkMode ? AppColors.darkText : Colors.white,
             fontSize: 20,
             fontWeight: FontWeight.bold,
           ),
@@ -2222,6 +2240,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   }
 
   Widget _buildPhotoCard(Map<String, dynamic> photo) {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context);
     // Use the same simple approach as feed screen - just use firebaseUrl
     final String? imageUrl = photo['firebaseUrl'] ?? photo['url'];
     
@@ -2237,8 +2256,11 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12.0),
-          color: Colors.grey[900],
-          border: Border.all(color: Colors.grey[700]!, width: 0.5),
+          color: darkModeProvider.isDarkMode ? AppColors.darkCardBackground : Colors.white,
+          border: Border.all(
+            color: darkModeProvider.isDarkMode ? AppColors.darkCardBorder : Colors.grey[300]!,
+            width: 0.5,
+          ),
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12.0),
@@ -2579,8 +2601,11 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   }
 
   Widget _buildSearchOverlay() {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context);
     return Container(
-      color: Colors.black.withOpacity(0.95),
+      color: darkModeProvider.isDarkMode 
+          ? AppColors.darkBackground.withOpacity(0.95)
+          : Colors.black.withOpacity(0.95),
       child: SafeArea(
         child: Column(
           children: [
@@ -2669,34 +2694,51 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
 
 
   Widget _buildSearchResultItem(Map<String, dynamic> user) {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.grey[900],
+        color: darkModeProvider.isDarkMode ? AppColors.darkCardBackground : Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[700]!, width: 0.5),
+        border: Border.all(
+          color: darkModeProvider.isDarkMode ? AppColors.darkCardBorder : Colors.grey[300]!,
+          width: 0.5,
+        ),
       ),
       child: ListTile(
         leading: _buildSearchAvatar(user['photoURL'], user['displayName']),
         title: Text(
           user['displayName'],
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+          style: TextStyle(
+            color: darkModeProvider.isDarkMode ? AppColors.darkText : AppColors.titleText,
+            fontWeight: FontWeight.w500,
+          ),
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               '@${user['username']}',
-              style: const TextStyle(color: Colors.grey, fontSize: 12),
+              style: TextStyle(
+                color: darkModeProvider.isDarkMode ? AppColors.darkTextSecondary : Colors.grey[600],
+                fontSize: 12,
+              ),
             ),
             Text(
               user['email'],
-              style: const TextStyle(color: Colors.grey, fontSize: 12),
+              style: TextStyle(
+                color: darkModeProvider.isDarkMode ? AppColors.darkTextSecondary : Colors.grey[600],
+                fontSize: 12,
+              ),
             ),
           ],
         ),
         trailing: IconButton(
-          icon: const Icon(Icons.person_add, color: Colors.white, size: 20),
+          icon: Icon(
+            Icons.person_add,
+            color: darkModeProvider.isDarkMode ? AppColors.darkText : AppColors.titleText,
+            size: 20,
+          ),
           onPressed: () {
             // Handle follow user
             ScaffoldMessenger.of(context).showSnackBar(
@@ -2723,19 +2765,22 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     );
   }
 
-  Widget _buildBottomNavigationBar() {
+  Widget _buildBottomNavigationBar(DarkModeProvider darkModeProvider) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.black,
+        color: darkModeProvider.isDarkMode ? AppColors.darkBackground : Colors.white,
         border: Border(
-          top: BorderSide(color: Colors.grey[800]!, width: 0.5),
+          top: BorderSide(
+            color: darkModeProvider.isDarkMode ? AppColors.darkCardBorder : Colors.grey[300]!,
+            width: 0.5,
+          ),
         ),
       ),
       child: BottomNavigationBar(
-        backgroundColor: Colors.black,
+        backgroundColor: darkModeProvider.isDarkMode ? AppColors.darkBackground : Colors.white,
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: Colors.white,
-        unselectedItemColor: Colors.grey[600],
+        selectedItemColor: darkModeProvider.isDarkMode ? AppColors.darkText : AppColors.titleText,
+        unselectedItemColor: darkModeProvider.isDarkMode ? AppColors.darkTextSecondary : Colors.grey[600],
         currentIndex: _selectedBottomNavIndex,
         onTap: (index) {
           setState(() {
