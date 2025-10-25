@@ -573,7 +573,7 @@ class _NavDrawerState extends State<NavDrawer> {
                 }
               },
               icon: const Icon(Icons.favorite),
-              label: const Text('Donate to ReptiGram'),
+              label: const Text('Donate to Reptigram'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green.shade700,
                 foregroundColor: Colors.white,
@@ -722,7 +722,7 @@ class _NavDrawerState extends State<NavDrawer> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
             child: const Text(
-              'Donate to ReptiGram',
+              'Donate to Reptigram',
               style: TextStyle(fontSize: 16, color: Colors.white),
             ),
           ),

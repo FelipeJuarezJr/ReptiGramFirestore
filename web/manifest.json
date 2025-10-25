@@ -1,6 +1,6 @@
 {
-    "name": "ReptiGram - A Social Network for Reptile Enthusiasts",
-    "short_name": "ReptiGram",
+    "name": "Reptigram - A Social Network for Reptile Enthusiasts",
+    "short_name": "Reptigram",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#FFDE59",

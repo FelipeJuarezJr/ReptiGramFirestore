@@ -414,7 +414,7 @@ class _MyAppState extends State<MyApp> {
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
-        title: 'ReptiGram',
+        title: 'Reptigram',
         theme: ThemeData(
           primarySwatch: Colors.blue,
           useMaterial3: true,
