@@ -16,6 +16,12 @@ import '../services/like_cache_service.dart';
 import '../constants/photo_sources.dart';
 import '../utils/responsive_utils.dart';
 import '../widgets/move_photo_dialog.dart';
+import '../state/dark_mode_provider.dart';
+import '../screens/home_dashboard_screen.dart';
+import '../screens/post_screen.dart';
+import '../screens/albums_screen.dart';
+import '../screens/feed_screen.dart';
+import '../screens/dm_inbox_screen.dart';
 
 class PhotosOnlyScreen extends StatefulWidget {
   final String notebookName;
@@ -339,26 +345,35 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
+    
     return Consumer<AppState>(
       builder: (context, appState, child) {
         return Scaffold(
           body: Container(
             height: MediaQuery.of(context).size.height,
-            decoration: const BoxDecoration(
-              gradient: AppColors.mainGradient,
-            ),
+            decoration: darkModeProvider.isDarkMode 
+                ? const BoxDecoration(
+                    color: AppColors.darkBackground,
+                  )
+                : const BoxDecoration(
+                    gradient: AppColors.mainGradient,
+                  ),
             child: SafeArea(
               child: ResponsiveUtils.isWideScreen(context) 
                   ? _buildDesktopLayout(context, appState)
                   : _buildMobileLayout(context, appState),
             ),
           ),
+          bottomNavigationBar: ResponsiveUtils.isWideScreen(context) ? null : _buildBottomNavigationBar(),
         );
       }
     );
   }
 
   Widget _buildDesktopLayout(BuildContext context, AppState appState) {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
+    
     return Column(
       children: [
         const TitleHeader(),
@@ -382,20 +397,33 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
                       ),
                       child: Container(
                         decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Color(0xFFFFF8E1), // Light cream
-                              Color(0xFFFFE0B2), // Light orange
-                              Color(0xFFFFCC80), // Medium orange
-                            ],
-                            stops: [0.0, 0.5, 1.0],
-                          ),
+                          gradient: darkModeProvider.isDarkMode
+                              ? const LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    AppColors.darkCardBackground,
+                                    AppColors.darkCardBackground,
+                                    AppColors.darkCardBackground,
+                                  ],
+                                  stops: [0.0, 0.5, 1.0],
+                                )
+                              : const LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    Color(0xFFFFF8E1), // Light cream
+                                    Color(0xFFFFE0B2), // Light orange
+                                    Color(0xFFFFCC80), // Medium orange
+                                  ],
+                                  stops: [0.0, 0.5, 1.0],
+                                ),
                           borderRadius: BorderRadius.circular(20),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
+                              color: darkModeProvider.isDarkMode 
+                                  ? Colors.black.withOpacity(0.3)
+                                  : Colors.black.withOpacity(0.1),
                               blurRadius: 10,
                               offset: const Offset(0, 4),
                             ),
@@ -409,28 +437,28 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
                               Row(
                                 children: [
                                   IconButton(
-                                    icon: const Icon(
+                                    icon: Icon(
                                       Icons.arrow_back,
-                                      color: AppColors.titleText,
+                                      color: darkModeProvider.isDarkMode ? AppColors.darkText : AppColors.titleText,
                                     ),
                                     onPressed: () {
                                       Navigator.pop(context);
                                     },
                                   ),
-                                  const Text(
+                                  Text(
                                     'Photos',
                                     style: TextStyle(
                                       fontSize: 24,
                                       fontWeight: FontWeight.bold,
-                                      color: AppColors.titleText,
+                                      color: darkModeProvider.isDarkMode ? AppColors.darkText : AppColors.titleText,
                                     ),
                                   ),
                                 ],
                               ),
                               Text(
                                 widget.notebookName,
-                                style: const TextStyle(
-                                  color: AppColors.titleText,
+                                style: TextStyle(
+                                  color: darkModeProvider.isDarkMode ? AppColors.darkText : AppColors.titleText,
                                   fontSize: 18,
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -461,6 +489,8 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
   }
 
   Widget _buildMobileLayout(BuildContext context, AppState appState) {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
+    
     return Column(
       children: [
         const TitleHeader(),
@@ -476,9 +506,9 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
                   child: Padding(
                     padding: const EdgeInsets.only(left: 8.0),
                     child: IconButton(
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.arrow_back,
-                        color: AppColors.titleText,
+                        color: darkModeProvider.isDarkMode ? AppColors.darkText : AppColors.titleText,
                       ),
                       onPressed: () {
                         Navigator.pop(context);
@@ -501,8 +531,8 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
                 const SizedBox(height: 20),
                 Text(
                   widget.notebookName,
-                  style: const TextStyle(
-                    color: AppColors.titleText,
+                  style: TextStyle(
+                    color: darkModeProvider.isDarkMode ? AppColors.darkText : AppColors.titleText,
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
                   ),
@@ -521,6 +551,8 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
   }
 
   Widget _buildActionButtons(BuildContext context) {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
+    
     return Column(
       children: [
         SizedBox(
@@ -530,8 +562,8 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
             icon: const Icon(Icons.add_photo_alternate),
             label: const Text('Add Image'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.titleText,
-              foregroundColor: Colors.white,
+              backgroundColor: darkModeProvider.isDarkMode ? AppColors.darkText : AppColors.titleText,
+              foregroundColor: darkModeProvider.isDarkMode ? AppColors.darkBackground : Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -544,15 +576,17 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
   }
 
   Widget _buildPhotosGrid(BuildContext context, AppState appState) {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
+    
     return appState.isLoading && appState.photos.isEmpty
         ? const Center(child: CircularProgressIndicator())
         : appState.photos.isEmpty
-            ? const Center(
+            ? Center(
                 child: Text(
                   'No photos yet.\nTap "Add Image" to get started!',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: AppColors.titleText,
+                    color: darkModeProvider.isDarkMode ? AppColors.darkText : AppColors.titleText,
                     fontSize: 16,
                   ),
                 ),
@@ -580,16 +614,29 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
   }
 
   Widget _buildSmallActionButton(String title, IconData icon, VoidCallback onTap) {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
+    
     return InkWell(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         decoration: BoxDecoration(
-          gradient: AppColors.loginGradient,
+          gradient: darkModeProvider.isDarkMode 
+              ? const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AppColors.darkCardBackground,
+                    AppColors.darkCardBackground,
+                  ],
+                )
+              : AppColors.loginGradient,
           borderRadius: BorderRadius.circular(25),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.2),
+              color: darkModeProvider.isDarkMode 
+                  ? Colors.black.withOpacity(0.4)
+                  : Colors.black.withOpacity(0.2),
               blurRadius: 5,
               offset: const Offset(0, 3),
             ),
@@ -599,14 +646,14 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
           children: [
             Icon(
               icon,
-              color: AppColors.buttonText,
+              color: darkModeProvider.isDarkMode ? AppColors.darkText : AppColors.buttonText,
               size: 24,
             ),
             const SizedBox(width: 8),
             Text(
               title,
-              style: const TextStyle(
-                color: AppColors.buttonText,
+              style: TextStyle(
+                color: darkModeProvider.isDarkMode ? AppColors.darkText : AppColors.buttonText,
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
               ),
@@ -1331,5 +1378,99 @@ class _PhotosOnlyScreenState extends State<PhotosOnlyScreen> {
     if (result == true) {
       await _loadPhotos();
     }
+  }
+
+  Widget _buildBottomNavigationBar() {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
+    return Container(
+      decoration: BoxDecoration(
+        color: darkModeProvider.isDarkMode ? AppColors.darkBackground : Colors.white,
+        border: Border(
+          top: BorderSide(
+            color: darkModeProvider.isDarkMode ? AppColors.darkCardBorder : Colors.grey[300]!,
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: BottomNavigationBar(
+        backgroundColor: darkModeProvider.isDarkMode ? AppColors.darkBackground : Colors.white,
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: darkModeProvider.isDarkMode ? AppColors.darkText : AppColors.titleText,
+        unselectedItemColor: darkModeProvider.isDarkMode ? AppColors.darkTextSecondary : Colors.grey[600],
+        currentIndex: 2, // Albums screen index
+        onTap: (index) {
+          // Handle navigation based on selected index
+          switch (index) {
+            case 0:
+              // Home - navigate to current user's dashboard
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const HomeDashboardScreen(isCurrentUser: true),
+                ),
+              );
+              break;
+            case 1:
+              // Post - navigate to PostScreen
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const PostScreen(),
+                ),
+              );
+              break;
+            case 2:
+              // Albums - navigate to AlbumsScreen
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const AlbumsScreen(),
+                ),
+              );
+              break;
+            case 3:
+              // Feed - navigate to FeedScreen
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const FeedScreen(),
+                ),
+              );
+              break;
+            case 4:
+              // Messages - navigate to DMInboxScreen
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const DMInboxScreen(),
+                ),
+              );
+              break;
+          }
+        },
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.create),
+            label: 'Post',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.photo_library),
+            label: 'Albums',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.rss_feed),
+            label: 'Feed',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.message),
+            label: 'Messages',
+          ),
+        ],
+      ),
+    );
   }
 } 

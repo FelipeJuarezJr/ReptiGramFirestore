@@ -14,6 +14,10 @@ import '../models/photo_data.dart';
 import '../utils/photo_utils.dart';
 import '../screens/notebooks_screen.dart';
 import '../screens/albums_screen.dart';
+import '../screens/home_dashboard_screen.dart';
+import '../screens/post_screen.dart';
+import '../screens/feed_screen.dart';
+import '../screens/dm_inbox_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
 import '../constants/photo_sources.dart';
@@ -407,6 +411,7 @@ class _BindersScreenState extends State<BindersScreen> {
               : _buildMobileLayout(context),
         ),
       ),
+      bottomNavigationBar: ResponsiveUtils.isWideScreen(context) ? null : _buildBottomNavigationBar(darkModeProvider),
     );
   }
 
@@ -2127,5 +2132,98 @@ class _BindersScreenState extends State<BindersScreen> {
       await _loadBinders();
       await _loadBinderPhotos();
     }
+  }
+
+  Widget _buildBottomNavigationBar(DarkModeProvider darkModeProvider) {
+    return Container(
+      decoration: BoxDecoration(
+        color: darkModeProvider.isDarkMode ? AppColors.darkBackground : Colors.white,
+        border: Border(
+          top: BorderSide(
+            color: darkModeProvider.isDarkMode ? AppColors.darkCardBorder : Colors.grey[300]!,
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: BottomNavigationBar(
+        backgroundColor: darkModeProvider.isDarkMode ? AppColors.darkBackground : Colors.white,
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: darkModeProvider.isDarkMode ? AppColors.darkText : AppColors.titleText,
+        unselectedItemColor: darkModeProvider.isDarkMode ? AppColors.darkTextSecondary : Colors.grey[600],
+        currentIndex: 2, // Albums screen index
+        onTap: (index) {
+          // Handle navigation based on selected index
+          switch (index) {
+            case 0:
+              // Home - navigate to current user's dashboard
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const HomeDashboardScreen(isCurrentUser: true),
+                ),
+              );
+              break;
+            case 1:
+              // Post - navigate to PostScreen
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const PostScreen(),
+                ),
+              );
+              break;
+            case 2:
+              // Albums - navigate to AlbumsScreen
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const AlbumsScreen(),
+                ),
+              );
+              break;
+            case 3:
+              // Feed - navigate to FeedScreen
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const FeedScreen(),
+                ),
+              );
+              break;
+            case 4:
+              // Messages - navigate to DMInboxScreen
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const DMInboxScreen(),
+                ),
+              );
+              break;
+          }
+        },
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.create),
+            label: 'Post',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.photo_library),
+            label: 'Albums',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.rss_feed),
+            label: 'Feed',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.message),
+            label: 'Messages',
+          ),
+        ],
+      ),
+    );
   }
 } 
