@@ -1,9 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'chat_screen.dart';
 import '../services/chat_service.dart';
 import '../styles/colors.dart';
+import '../state/dark_mode_provider.dart';
 import 'dart:async';
 
 class UserSearchScreen extends StatefulWidget {
@@ -284,58 +286,107 @@ class _UserSearchScreenState extends State<UserSearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
+    
     return Scaffold(
       appBar: AppBar(
         title: const Text('New Message'),
-        backgroundColor: AppColors.titleText,
-        foregroundColor: Colors.white,
+        backgroundColor: darkModeProvider.isDarkMode ? AppColors.darkCardBackground : AppColors.titleText,
+        foregroundColor: darkModeProvider.isDarkMode ? AppColors.darkText : Colors.white,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: Column(
-        children: [
-          // Search bar
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Search by name or username...',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchController.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                        },
-                      )
-                    : null,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+      body: Container(
+        decoration: darkModeProvider.isDarkMode 
+            ? const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF424242), // Colors.grey[800]!
+                    Color(0xFF212121), // Colors.grey[900]!
+                    Color(0xFF000000), // Colors.black
+                  ],
                 ),
-                filled: true,
-                fillColor: Colors.grey[100],
+              )
+            : null,
+        child: Column(
+          children: [
+            // Search bar
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: TextField(
+                controller: _searchController,
+                style: TextStyle(
+                  color: darkModeProvider.isDarkMode ? AppColors.darkText : Colors.black,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Search by name or username...',
+                  hintStyle: TextStyle(
+                    color: darkModeProvider.isDarkMode ? AppColors.darkTextSecondary : Colors.grey[600],
+                  ),
+                  prefixIcon: Icon(
+                    Icons.search,
+                    color: darkModeProvider.isDarkMode ? AppColors.darkText : Colors.grey[600],
+                  ),
+                  suffixIcon: _searchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: Icon(
+                            Icons.clear,
+                            color: darkModeProvider.isDarkMode ? AppColors.darkText : Colors.grey[600],
+                          ),
+                          onPressed: () {
+                            _searchController.clear();
+                          },
+                        )
+                      : null,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: darkModeProvider.isDarkMode ? AppColors.darkCardBorder : Colors.grey[300]!,
+                    ),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: darkModeProvider.isDarkMode ? AppColors.darkCardBorder : Colors.grey[300]!,
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: darkModeProvider.isDarkMode ? AppColors.darkText : AppColors.titleText,
+                      width: 2,
+                    ),
+                  ),
+                  filled: true,
+                  fillColor: darkModeProvider.isDarkMode 
+                      ? AppColors.darkCardBackground.withOpacity(0.5)
+                      : Colors.grey[100],
+                ),
+                autofocus: true,
               ),
-              autofocus: true,
             ),
-          ),
-          
-          // Results
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _hasSearched
-                    ? _buildSearchResults()
-                    : _buildSuggestedUsers(),
-          ),
-        ],
+            
+            // Results
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _hasSearched
+                      ? _buildSearchResults()
+                      : _buildSuggestedUsers(),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildSearchResults() {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
+    
     if (_searchResults.isEmpty) {
       return Center(
         child: Column(
@@ -344,7 +395,7 @@ class _UserSearchScreenState extends State<UserSearchScreen> {
             Icon(
               Icons.search_off,
               size: 60,
-              color: Colors.grey[400],
+              color: darkModeProvider.isDarkMode ? AppColors.darkTextSecondary : Colors.grey[400],
             ),
             const SizedBox(height: 16),
             Text(
@@ -352,7 +403,7 @@ class _UserSearchScreenState extends State<UserSearchScreen> {
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
-                color: Colors.grey[600],
+                color: darkModeProvider.isDarkMode ? AppColors.darkText : Colors.grey[600],
               ),
             ),
             const SizedBox(height: 8),
@@ -360,7 +411,7 @@ class _UserSearchScreenState extends State<UserSearchScreen> {
               'Try searching with a different name',
               style: TextStyle(
                 fontSize: 14,
-                color: Colors.grey[500],
+                color: darkModeProvider.isDarkMode ? AppColors.darkTextSecondary : Colors.grey[500],
               ),
             ),
           ],
@@ -379,9 +430,16 @@ class _UserSearchScreenState extends State<UserSearchScreen> {
   }
 
   Widget _buildSuggestedUsers() {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
+    
     if (_suggestedUsers.isEmpty) {
-      return const Center(
-        child: Text('No suggested users available'),
+      return Center(
+        child: Text(
+          'No suggested users available',
+          style: TextStyle(
+            color: darkModeProvider.isDarkMode ? AppColors.darkText : Colors.grey[600],
+          ),
+        ),
       );
     }
 
@@ -395,7 +453,7 @@ class _UserSearchScreenState extends State<UserSearchScreen> {
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
-              color: Colors.grey[700],
+              color: darkModeProvider.isDarkMode ? AppColors.darkText : Colors.grey[700],
             ),
           ),
         ),
@@ -414,31 +472,40 @@ class _UserSearchScreenState extends State<UserSearchScreen> {
   }
 
   Widget _buildUserTile(UserSearchData user) {
+    final darkModeProvider = Provider.of<DarkModeProvider>(context, listen: true);
+    
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.grey[50],
+        color: darkModeProvider.isDarkMode 
+            ? AppColors.darkCardBackground.withOpacity(0.5)
+            : Colors.grey[50],
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[200]!),
+        border: Border.all(
+          color: darkModeProvider.isDarkMode 
+              ? AppColors.darkCardBorder
+              : Colors.grey[200]!,
+        ),
       ),
       child: ListTile(
         leading: _buildAvatar(user.avatarUrl, user.name),
         title: Text(
           user.name,
-          style: const TextStyle(
+          style: TextStyle(
             fontWeight: FontWeight.w500,
+            color: darkModeProvider.isDarkMode ? AppColors.darkText : Colors.black,
           ),
         ),
         subtitle: Text(
           user.email,
           style: TextStyle(
-            color: Colors.grey[600],
+            color: darkModeProvider.isDarkMode ? AppColors.darkTextSecondary : Colors.grey[600],
             fontSize: 12,
           ),
         ),
-        trailing: const Icon(
+        trailing: Icon(
           Icons.message_outlined,
-          color: Colors.blue,
+          color: darkModeProvider.isDarkMode ? AppColors.darkText : Colors.blue,
         ),
         onTap: () => _startConversation(user),
       ),

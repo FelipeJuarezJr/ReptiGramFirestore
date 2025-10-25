@@ -267,11 +267,26 @@ class _DMInboxScreenState extends State<DMInboxScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _conversations.isEmpty
-              ? _buildEmptyState()
-              : _buildConversationsList(),
+      body: Container(
+        decoration: darkModeProvider.isDarkMode 
+            ? const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF424242), // Colors.grey[800]!
+                    Color(0xFF212121), // Colors.grey[900]!
+                    Color(0xFF000000), // Colors.black
+                  ],
+                ),
+              )
+            : null,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _conversations.isEmpty
+                ? _buildEmptyState()
+                : _buildConversationsList(),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openSearchScreen,
         backgroundColor: darkModeProvider.isDarkMode ? AppColors.darkCardBackground : AppColors.titleText,

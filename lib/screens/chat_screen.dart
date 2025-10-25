@@ -602,9 +602,24 @@ class _ChatScreenState extends State<ChatScreen> {
         backgroundColor: darkModeProvider.isDarkMode ? AppColors.darkCardBackground : AppColors.titleText,
         foregroundColor: darkModeProvider.isDarkMode ? AppColors.darkText : Colors.white,
       ),
-      body: ResponsiveUtils.isWideScreen(context) 
-          ? _buildDesktopLayout(context)
-          : _buildMobileLayout(context),
+      body: Container(
+        decoration: darkModeProvider.isDarkMode 
+            ? const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF424242), // Colors.grey[800]!
+                    Color(0xFF212121), // Colors.grey[900]!
+                    Color(0xFF000000), // Colors.black
+                  ],
+                ),
+              )
+            : null,
+        child: ResponsiveUtils.isWideScreen(context) 
+            ? _buildDesktopLayout(context)
+            : _buildMobileLayout(context),
+      ),
     );
   }
 
