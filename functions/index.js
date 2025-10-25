@@ -144,6 +144,156 @@ exports.sendChatNotification = functions.firestore
     }
   });
 
+// Send push notification when a new message is created in conversations
+exports.sendConversationNotification = functions.firestore
+  .document('conversations/{conversationId}/messages/{messageId}')
+  .onCreate(async (snap, context) => {
+    const messageData = snap.data();
+    const conversationId = context.params.conversationId;
+    
+    // Don't send notification if it's a system message
+    if (messageData.messageType === 'system') {
+      return null;
+    }
+
+    try {
+      // Get conversation data to find participants
+      const conversationDoc = await admin.firestore().collection('conversations').doc(conversationId).get();
+      if (!conversationDoc.exists) {
+        console.log('Conversation document not found');
+        return null;
+      }
+
+      const conversationData = conversationDoc.data();
+      const participants = conversationData.participants || [];
+      const senderId = messageData.senderId;
+      
+      // Find recipient (the other participant)
+      const recipientId = participants.find(id => id !== senderId);
+
+      if (!recipientId) {
+        console.log('Recipient not found in conversation participants');
+        return null;
+      }
+
+      // Get recipient's FCM token
+      const recipientDoc = await admin.firestore().collection('users').doc(recipientId).get();
+      if (!recipientDoc.exists) {
+        console.log('Recipient user document not found');
+        return null;
+      }
+
+      const recipientData = recipientDoc.data();
+      const fcmToken = recipientData.fcmToken;
+
+      if (!fcmToken) {
+        console.log('Recipient FCM token not found');
+        return null;
+      }
+
+      // Get sender's information
+      const senderDoc = await admin.firestore().collection('users').doc(senderId).get();
+      let senderName = 'Someone';
+      if (senderDoc.exists) {
+        const senderData = senderDoc.data();
+        senderName = senderData.username || senderData.displayName || 'Someone';
+      }
+
+      // Prepare notification content based on message type
+      let notificationTitle = `New message from ${senderName}`;
+      let notificationBody = '';
+
+      switch (messageData.messageType) {
+        case 'image':
+          notificationBody = '📷 Sent you an image';
+          break;
+        case 'file':
+          notificationBody = `📎 Sent you a file: ${messageData.fileName || 'File'}`;
+          break;
+        default:
+          notificationBody = messageData.text || 'New message';
+          break;
+      }
+
+      // Create the message using FCM v1 API
+      const message = {
+        token: fcmToken,
+        notification: {
+          title: notificationTitle,
+          body: notificationBody,
+        },
+        data: {
+          senderId: senderId,
+          messageType: messageData.messageType || 'text',
+          conversationId: conversationId,
+          messageId: context.params.messageId,
+          clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+        },
+        android: {
+          notification: {
+            sound: 'default',
+            channelId: 'chat_messages',
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: 'default',
+              badge: 1,
+            },
+          },
+        },
+        webpush: {
+          notification: {
+            title: notificationTitle,
+            body: notificationBody,
+            icon: '/favicon.png',
+            badge: '/favicon.png',
+            tag: 'conversation-message',
+            requireInteraction: true,
+            renotify: true,
+            silent: false,
+            vibrate: [200, 100, 200, 100, 200],
+            data: {
+              senderId: senderId,
+              messageType: messageData.messageType || 'text',
+              conversationId: conversationId,
+              messageId: context.params.messageId,
+            },
+            actions: [
+              {
+                action: 'open',
+                title: 'Open Chat'
+              }
+            ],
+            // Mobile-specific enhancements
+            dir: 'auto',
+            lang: 'en',
+            image: '/favicon.png'
+          },
+          fcm_options: {
+            link: '/',
+            analytics_label: 'conversation_message'
+          },
+          // Enhanced headers for better mobile delivery
+          headers: {
+            'Urgency': 'high',
+            'TTL': '86400' // 24 hours
+          }
+        },
+      };
+
+      // Send the message using FCM v1 API
+      const response = await admin.messaging().send(message);
+      console.log('Successfully sent conversation notification:', response);
+      
+      return response;
+    } catch (error) {
+      console.error('Error sending conversation notification:', error);
+      return null;
+    }
+  });
+
 // Update FCM token when user signs in
 exports.updateFcmToken = functions.https.onCall(async (data, context) => {
   // Check if user is authenticated
