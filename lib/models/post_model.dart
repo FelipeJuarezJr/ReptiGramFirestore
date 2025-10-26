@@ -6,6 +6,9 @@ class PostModel {
   final String content;
   final DateTime timestamp;
   final String? imageUrl; // Optional image URL for image posts
+  final String? videoUrl; // Optional video URL for video posts
+  final String? thumbnailUrl; // Optional thumbnail for video posts
+  final String? mediaType; // 'image', 'video', or null for text-only
   bool isLiked;
   int likeCount;
   List<CommentModel> comments;
@@ -20,6 +23,9 @@ class PostModel {
     required this.content,
     required this.timestamp,
     this.imageUrl,
+    this.videoUrl,
+    this.thumbnailUrl,
+    this.mediaType,
     this.isLiked = false,
     this.likeCount = 0,
     List<CommentModel>? comments,

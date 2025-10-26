@@ -16,6 +16,7 @@ import 'audit_firebase_config.dart';
 import 'services/firestore_service.dart';
 import 'services/message_preload_service.dart';
 import 'services/message_cleanup_service.dart';
+import 'utils/platform_detector.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -62,6 +63,19 @@ Future<void> main() async {
   } catch (e) {
     print('❌ CRITICAL: Firebase configuration error: $e');
     print('🛑 App will continue but may write to wrong project!');
+  }
+
+  // Detect and log platform information
+  PlatformDetector.logPlatformInfo();
+  if (kIsWeb) {
+    try {
+      // Try to detect PWA mode from window object
+      // PWA mode is detected in HTML as window.matchMedia('(display-mode: standalone)')
+      // We'll log this information for debugging
+      print('📱 Platform: ${PlatformDetector.getPlatformInfo()}');
+    } catch (e) {
+      print('⚠️ Could not detect PWA mode: $e');
+    }
   }
 
   // Start background services for message optimization

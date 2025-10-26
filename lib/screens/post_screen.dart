@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
+import 'dart:html' as html show VideoElement, StyleElement;
+import 'dart:ui' as ui show platformViewRegistry;
 import '../styles/colors.dart';
 import '../common/header.dart';
 import '../common/title_header.dart';
@@ -21,6 +24,13 @@ import 'home_dashboard_screen.dart';
 import 'albums_screen.dart';
 import 'feed_screen.dart';
 import 'dm_inbox_screen.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:video_compress/video_compress.dart';
+import 'package:video_player/video_player.dart';
+import '../utils/platform_detector.dart';
+import 'package:url_launcher/url_launcher.dart' as url_launcher;
+import 'dart:math';
+import 'package:flutter/widgets.dart' show HtmlElementView;
 
 class PostScreen extends StatefulWidget {
   final bool shouldLoadPosts;
@@ -45,11 +55,21 @@ class _PostScreenState extends State<PostScreen> {
   bool _isLoadingMore = false;
   bool _hasMoreData = true;
   DocumentSnapshot? _lastDocument;
+  
+  // Media upload state
+  XFile? _selectedMedia;
+  String? _mediaType; // 'image' or 'video'
+  bool _isUploading = false;
+  String? _uploadedThumbnailUrl; // Store thumbnail URL temporarily
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    
+    // Log platform information for debugging
+    PlatformDetector.logPlatformInfo();
+    
     // Load posts when screen is mounted
     _loadPosts();
     _loadUsernames();
@@ -256,6 +276,10 @@ class _PostScreenState extends State<PostScreen> {
           userId: postUserId,
           content: data['content'] ?? '[No content]',
           timestamp: postTimestamp,
+          imageUrl: data['imageUrl'],
+          videoUrl: data['videoUrl'],
+          thumbnailUrl: data['thumbnailUrl'],
+          mediaType: data['mediaType'],
           isLiked: false, // Will be updated later if needed
           likeCount: 0,   // Will be updated later if needed
           comments: comments,
@@ -275,40 +299,456 @@ class _PostScreenState extends State<PostScreen> {
     return loadedPosts;
   }
 
+  Future<void> _pickImage() async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+      );
+      
+      if (image != null && mounted) {
+        setState(() {
+          _selectedMedia = image;
+          _mediaType = 'image';
+        });
+      }
+    } catch (e) {
+      print('Error picking image: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to pick image: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickVideo() async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? video = await picker.pickVideo(
+        source: ImageSource.gallery,
+      );
+      
+      if (video != null) {
+        print('📹 Video selected: ${video.name} (${video.path})');
+        print('📹 Video extension: ${video.path.split('.').last}');
+        print('📹 Video size: ${video.length()} bytes');
+        
+        // Check video duration (max 15 seconds for short videos)
+        if (PlatformDetector.isMobile) {
+          // Only use VideoCompress on mobile platforms
+          try {
+            final videoInfo = await VideoCompress.getMediaInfo(video.path);
+            print('📹 Video duration: ${videoInfo.duration} seconds');
+            print('📹 Video file size: ${videoInfo.filesize} bytes');
+            print('📹 Video width: ${videoInfo.width}, height: ${videoInfo.height}');
+            
+            if (videoInfo.duration != null && videoInfo.duration! > 15) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Videos must be 15 seconds or less')),
+                );
+              }
+              return;
+            }
+            
+            // Check file size - reject files > 20MB
+            if (videoInfo.filesize != null && videoInfo.filesize! > 20 * 1024 * 1024) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Videos must be 20MB or less')),
+                );
+              }
+              return;
+            }
+            
+            // Check resolution - warn if too high
+            if ((videoInfo.width != null && videoInfo.width! > 1920) || 
+                (videoInfo.height != null && videoInfo.height! > 1080)) {
+              print('⚠️ Video resolution is high: ${videoInfo.width}x${videoInfo.height}');
+              print('⚠️ Will be compressed to max 720p');
+            }
+          } catch (e) {
+            print('📹 Could not get video info: $e');
+            // Continue even if we can't get video info
+          }
+        }
+        
+        if (mounted) {
+          setState(() {
+            _selectedMedia = video;
+            _mediaType = 'video';
+          });
+        }
+      }
+    } catch (e) {
+      print('Error picking video: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to pick video: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
+  Future<Uint8List> _compressImage(XFile imageFile) async {
+    try {
+      if (PlatformDetector.isWeb) {
+        // On web, just read the file as bytes
+        return await imageFile.readAsBytes();
+      }
+      
+      // On mobile, compress the image
+      final file = File(imageFile.path);
+      final result = await FlutterImageCompress.compressWithFile(
+        file.absolute.path,
+        minWidth: 1024,
+        minHeight: 1024,
+        quality: 85,
+        format: CompressFormat.jpeg,
+      );
+      
+      if (result != null) {
+        return result;
+      }
+      // Fallback: read original file
+      return await imageFile.readAsBytes();
+    } catch (e) {
+      print('Error compressing image: $e');
+      // Fallback: read original file
+      return await imageFile.readAsBytes();
+    }
+  }
+
+  Future<String?> _generateVideoThumbnail(File videoFile) async {
+    try {
+      print('📹 Generating thumbnail from video...');
+      
+      // Use video_compress to generate thumbnail
+      final thumbnail = await VideoCompress.getFileThumbnail(
+        videoFile.path,
+        quality: 85,
+        position: -1, // -1 means from the middle of the video
+      );
+      
+      if (thumbnail != null) {
+        print('📹 Thumbnail generated successfully');
+        return thumbnail.path;
+      } else {
+        print('📹 Failed to generate thumbnail');
+        return null;
+      }
+    } catch (e) {
+      print('📹 Error generating thumbnail: $e');
+      return null;
+    }
+  }
+
+  Future<String> _uploadVideoThumbnail(String userId, String thumbnailPath) async {
+    try {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final thumbnailId = '$timestamp';
+      
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('post_thumbnails')
+          .child(userId)
+          .child('$thumbnailId.jpg');
+      
+      final file = File(thumbnailPath);
+      final thumbnailData = await file.readAsBytes();
+      
+      await ref.putData(
+        thumbnailData,
+        SettableMetadata(
+          contentType: 'image/jpeg',
+          cacheControl: 'public, max-age=7776000', // 90 days cache for better CDN efficiency
+          customMetadata: {
+            'userId': userId,
+            'uploadedAt': DateTime.now().toString(),
+          },
+        ),
+      );
+      
+      return await ref.getDownloadURL();
+    } catch (e) {
+      print('Error uploading thumbnail: $e');
+      rethrow;
+    }
+  }
+
+  Future<String> _uploadMedia(String userId, XFile mediaFile, String mediaType) async {
+    try {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final mediaId = '$timestamp';
+      Reference ref;
+      
+      if (mediaType == 'image') {
+        ref = FirebaseStorage.instance
+            .ref()
+            .child('post_images')
+            .child(userId)
+            .child('$mediaId.jpg');
+        
+        final compressedData = await _compressImage(mediaFile);
+        
+        await ref.putData(
+          compressedData,
+          SettableMetadata(
+            contentType: 'image/jpeg',
+            cacheControl: 'public, max-age=7776000', // 90 days cache for better CDN efficiency
+            customMetadata: {
+              'userId': userId,
+              'uploadedAt': DateTime.now().toString(),
+            },
+          ),
+        );
+      } else { // video
+        // Always store videos as MP4 for best compression and compatibility
+        // Accept any input format and convert to optimized MP4
+        String originalExtension = 'mp4'; // Default
+        if (PlatformDetector.isWeb) {
+          // On web, get extension from file name
+          originalExtension = mediaFile.name.split('.').last.toLowerCase();
+        } else {
+          originalExtension = mediaFile.path.split('.').last.toLowerCase();
+        }
+        
+        // Validate extension
+        if (!['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v'].contains(originalExtension)) {
+          originalExtension = 'mp4';
+        }
+        
+        print('📹 Original video format: $originalExtension');
+        
+        ref = FirebaseStorage.instance
+            .ref()
+            .child('post_videos')
+            .child(userId)
+            .child('$mediaId.mp4');
+        
+        if (PlatformDetector.isWeb || PlatformDetector.isPWA) {
+          // On web/PWA, we can't compress videos, so upload as-is
+          // Try to upload as MP4 if it already is, otherwise upload original
+          print('📹 Uploading video from ${PlatformDetector.isPWA ? "PWA" : "web"} without compression');
+          final bytes = await mediaFile.readAsBytes();
+          
+          // Check file size - reject files > 20MB for web uploads
+          if (bytes.length > 20 * 1024 * 1024) {
+            print('❌ Video file too large: ${(bytes.length / 1024 / 1024).toStringAsFixed(2)} MB');
+            throw Exception('Videos must be 20MB or less');
+          }
+          
+          String contentType = 'video/mp4';
+          if (originalExtension == 'mov') {
+            contentType = 'video/quicktime';
+          } else if (originalExtension == 'avi') {
+            contentType = 'video/x-msvideo';
+          } else if (originalExtension == 'webm') {
+            contentType = 'video/webm';
+          }
+          
+          await ref.putData(
+            bytes,
+            SettableMetadata(
+              contentType: contentType,
+              cacheControl: 'public, max-age=7776000', // 90 days cache for better CDN efficiency for web videos too
+              customMetadata: {
+                'userId': userId,
+                'uploadedAt': DateTime.now().toString(),
+                'originalFormat': originalExtension,
+              },
+            ),
+          );
+        } else {
+              // On mobile, always compress to optimized MP4 with bitrate cap
+              try {
+                print('📹 Compressing video to optimized MP4 with bitrate cap...');
+                
+                final info = await VideoCompress.compressVideo(
+                  mediaFile.path,
+                  quality: VideoQuality.MediumQuality, // Balanced quality/size (~2-3 Mbps target)
+                  deleteOrigin: false,
+                  includeAudio: true,
+                  frameRate: 30, // Limit to 30fps
+                  // Note: video_compress MediumQuality targets ~2-3 Mbps bitrate
+                  // Resolution will be capped by the Quality setting
+                );
+            
+            if (info != null && info.path != null) {
+              print('📹 Compression successful!');
+              print('📹 Original size: ${(await File(mediaFile.path).length() / 1024 / 1024).toStringAsFixed(2)} MB');
+              print('📹 Compressed size: ${(info.filesize != null ? info.filesize! / 1024 / 1024 : 0).toStringAsFixed(2)} MB');
+              print('📹 Resolution: ${info.width}x${info.height}');
+              print('📹 Duration: ${info.duration} seconds');
+              
+              final compressedFile = File(info.path!);
+              
+              // Upload compressed video with cache headers for optimization
+              await ref.putFile(
+                compressedFile,
+                SettableMetadata(
+                  contentType: 'video/mp4',
+                  cacheControl: 'public, max-age=7776000', // 90 days cache for better CDN efficiency
+                  customMetadata: {
+                    'userId': userId,
+                    'uploadedAt': DateTime.now().toString(),
+                    'originalFormat': originalExtension,
+                    'compressed': 'true',
+                    'width': info.width.toString(),
+                    'height': info.height.toString(),
+                    'duration': info.duration.toString(),
+                  },
+                ),
+              );
+              
+              print('📹 Video uploaded with 30-day cache header');
+              
+              // Get video URL first
+              final videoUrl = await ref.getDownloadURL();
+              
+              // Generate and upload thumbnail
+              final thumbnailPath = await _generateVideoThumbnail(compressedFile);
+              if (thumbnailPath != null) {
+                final thumbnailUrl = await _uploadVideoThumbnail(userId, thumbnailPath);
+                print('📹 Thumbnail generated and uploaded: $thumbnailUrl');
+                
+                // Store thumbnail URL for later use
+                if (mounted) {
+                  setState(() {
+                    _uploadedThumbnailUrl = thumbnailUrl;
+                  });
+                }
+              }
+              
+              // Clean up compressed video
+              await compressedFile.delete();
+              
+              return videoUrl;
+            } else {
+              throw Exception('Video compression returned null');
+            }
+          } catch (e) {
+            print('📹 Compression failed: $e');
+            print('📹 Uploading original file without compression');
+            
+            // If compression fails, upload original
+            final file = File(mediaFile.path);
+            String contentType = 'video/mp4';
+            if (originalExtension == 'mov') {
+              contentType = 'video/quicktime';
+            } else if (originalExtension == 'avi') {
+              contentType = 'video/x-msvideo';
+            } else if (originalExtension == 'webm') {
+              contentType = 'video/webm';
+            }
+            
+            await ref.putFile(
+              file,
+              SettableMetadata(
+                contentType: contentType,
+                customMetadata: {
+                  'userId': userId,
+                  'uploadedAt': DateTime.now().toString(),
+                  'originalFormat': originalExtension,
+                  'compressed': 'false',
+                },
+              ),
+            );
+          }
+        }
+      }
+      
+      return await ref.getDownloadURL();
+    } catch (e) {
+      print('Error uploading media: $e');
+      rethrow;
+    }
+  }
+
   Future<void> _createPost() async {
     if (!_formKey.currentState!.validate()) return;
 
     try {
       if (!mounted) return;
-      setState(() => _isLoading = true);
+      setState(() {
+        _isLoading = true;
+        _isUploading = true;
+      });
 
       final userId = FirebaseAuth.instance.currentUser?.uid;
       if (userId == null) return;
 
       final content = _descriptionController.text.trim();
+      String? imageUrl;
+      String? videoUrl;
+      String? thumbnailUrl;
+      
+      // Upload media if selected
+      if (_selectedMedia != null && _mediaType != null) {
+        try {
+          final url = await _uploadMedia(userId, _selectedMedia!, _mediaType!);
+          
+          if (_mediaType == 'image') {
+            imageUrl = url;
+          } else if (_mediaType == 'video') {
+            videoUrl = url;
+            
+            // Get the uploaded thumbnail URL if available
+            if (_uploadedThumbnailUrl != null) {
+              thumbnailUrl = _uploadedThumbnailUrl;
+              print('📹 Using thumbnail URL: $thumbnailUrl');
+            }
+          }
+        } catch (e) {
+          print('Error uploading media: $e');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Failed to upload media: ${e.toString()}')),
+            );
+          }
+          return;
+        }
+      }
 
       // Firestore: Create post
       await FirestoreService.posts.add({
         'userId': userId,
         'content': content,
         'timestamp': FieldValue.serverTimestamp(),
+        'imageUrl': imageUrl,
+        'videoUrl': videoUrl,
+        'thumbnailUrl': thumbnailUrl,
+        'mediaType': _mediaType,
       });
 
       _descriptionController.clear();
       if (mounted) {
-      await _loadPosts(); // Reload posts
+        setState(() {
+          _selectedMedia = null;
+          _mediaType = null;
+          _uploadedThumbnailUrl = null; // Reset thumbnail
+        });
+      }
+      
+      if (mounted) {
+        await _loadPosts(); // Reload posts
       }
 
     } catch (e) {
       print('Error creating post: $e');
       if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to create post: ${e.toString()}')),
-      );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to create post: ${e.toString()}')),
+        );
       }
     } finally {
       if (mounted) {
-      setState(() => _isLoading = false);
+        setState(() {
+          _isLoading = false;
+          _isUploading = false;
+        });
       }
     }
   }
@@ -650,28 +1090,39 @@ class _PostScreenState extends State<PostScreen> {
                         border: Border.all(color: Colors.grey),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: kIsWeb
-                            ? FutureBuilder<Uint8List>(
-                                future: selectedImage!.readAsBytes(),
-                                builder: (context, snapshot) {
-                                  if (snapshot.hasData) {
-                                    return Image.memory(
-                                      snapshot.data!,
-                                      fit: BoxFit.cover,
-                                    );
-                                  } else {
-                                    return const Center(
-                                      child: CircularProgressIndicator(),
-                                    );
-                                  }
-                                },
-                              )
-                            : Image.file(
-                                File(selectedImage!.path),
-                                fit: BoxFit.cover,
-                              ),
+                              child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: PlatformDetector.isWeb || PlatformDetector.isPWA
+                                ? FutureBuilder<Uint8List>(
+                                    future: selectedImage!.readAsBytes(),
+                                    builder: (context, snapshot) {
+                                      if (snapshot.hasData) {
+                                        try {
+                                          return Image.memory(
+                                            snapshot.data!,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (context, error, stackTrace) {
+                                              return const Center(
+                                                child: Icon(Icons.image, size: 64),
+                                              );
+                                            },
+                                          );
+                                        } catch (e) {
+                                          return const Center(
+                                            child: Icon(Icons.image, size: 64),
+                                          );
+                                        }
+                                      } else {
+                                        return const Center(
+                                          child: CircularProgressIndicator(),
+                                        );
+                                      }
+                                    },
+                                  )
+                          : Image.file(
+                              File(selectedImage!.path),
+                              fit: BoxFit.cover,
+                            ),
                       ),
                     ),
                   const SizedBox(height: 16),
@@ -840,7 +1291,7 @@ class _PostScreenState extends State<PostScreen> {
               .child(userId)
               .child(commentImageId);
           
-          if (kIsWeb) {
+          if (PlatformDetector.isWeb || PlatformDetector.isPWA) {
             final bytes = await imageFile.readAsBytes();
             await ref.putData(
               bytes,
@@ -1379,9 +1830,154 @@ class _PostScreenState extends State<PostScreen> {
                     },
                   ),
                 ),
+                const SizedBox(height: 8),
+                // Media picker buttons
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.image, color: Colors.brown),
+                      onPressed: _isLoading ? null : _pickImage,
+                      tooltip: 'Add Image',
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.videocam, color: Colors.brown),
+                      onPressed: _isLoading ? null : _pickVideo,
+                      tooltip: 'Add Video',
+                    ),
+                    if (_selectedMedia != null)
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.red),
+                        onPressed: () {
+                          setState(() {
+                            _selectedMedia = null;
+                            _mediaType = null;
+                          });
+                        },
+                        tooltip: 'Remove Media',
+                      ),
+                  ],
+                ),
+                // Media preview
+                if (_selectedMedia != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    height: 150,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey[400]!),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: _mediaType == 'image'
+                          ? (PlatformDetector.isWeb || PlatformDetector.isPWA
+                              ? FutureBuilder<Uint8List>(
+                                  future: _selectedMedia!.readAsBytes(),
+                                  builder: (context, snapshot) {
+                                    if (snapshot.hasData) {
+                                      final bytes = snapshot.data!;
+                                      // Use Image.memory with proper error handling
+                                      return Image.memory(
+                                        bytes,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) {
+                                          print('Image preview error: $error');
+                                          // If image decoding fails, show a nice placeholder
+                                          return Container(
+                                            decoration: BoxDecoration(
+                                              gradient: LinearGradient(
+                                                colors: [
+                                                  Colors.blue[100]!,
+                                                  Colors.blue[200]!,
+                                                ],
+                                              ),
+                                            ),
+                                            child: const Column(
+                                              mainAxisAlignment: MainAxisAlignment.center,
+                                              children: [
+                                                Icon(Icons.image, size: 64, color: Colors.white),
+                                                SizedBox(height: 8),
+                                                Text(
+                                                  'Image Selected',
+                                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      );
+                                    }
+                                    return const Center(child: CircularProgressIndicator());
+                                  },
+                                )
+                              : Image.file(
+                                  File(_selectedMedia!.path),
+                                  fit: BoxFit.cover,
+                                ))
+                          : ((PlatformDetector.isWeb || PlatformDetector.isPWA)
+                              ? Container(
+                                  // For web/PWA, show play icon for videos
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [
+                                        Colors.brown[700]!,
+                                        Colors.brown[900]!,
+                                      ],
+                                    ),
+                                  ),
+                                  child: const Center(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.play_circle_outline, size: 80, color: Colors.white),
+                                        SizedBox(height: 16),
+                                        Text(
+                                          'Video Selected',
+                                          style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                        ),
+                                        Text(
+                                          'Tap to upload',
+                                          style: TextStyle(color: Colors.white70, fontSize: 12),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                              : FutureBuilder<String>(
+                                  future: Future.value(_selectedMedia!.path),
+                                  builder: (context, snapshot) {
+                                    if (snapshot.hasData) {
+                                      return Stack(
+                                        alignment: Alignment.center,
+                                        children: [
+                                          Image.file(
+                                            File(_selectedMedia!.path),
+                                            fit: BoxFit.cover,
+                                          ),
+                                          const Icon(Icons.play_circle_outline,
+                                              size: 64, color: Colors.white),
+                                        ],
+                                      );
+                                    }
+                                    return const Center(child: CircularProgressIndicator());
+                                  },
+                                )),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 _isLoading
-                    ? const CircularProgressIndicator()
+                    ? (_isUploading 
+                        ? const Column(
+                            children: [
+                              CircularProgressIndicator(),
+                              SizedBox(height: 8),
+                              Text('Uploading media...'),
+                            ],
+                          )
+                        : const CircularProgressIndicator())
                     : SizedBox(
                         width: MediaQuery.of(context).size.width * 0.5,
                         child: ElevatedButton(
@@ -1456,9 +2052,131 @@ class _PostScreenState extends State<PostScreen> {
               },
             ),
           ),
+          const SizedBox(height: 8),
+          // Media picker buttons
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.image, color: Colors.brown),
+                onPressed: _isLoading ? null : _pickImage,
+                tooltip: 'Add Image',
+              ),
+              IconButton(
+                icon: const Icon(Icons.videocam, color: Colors.brown),
+                onPressed: _isLoading ? null : _pickVideo,
+                tooltip: 'Add Video',
+              ),
+              if (_selectedMedia != null)
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.red),
+                  onPressed: () {
+                    setState(() {
+                      _selectedMedia = null;
+                      _mediaType = null;
+                    });
+                  },
+                  tooltip: 'Remove Media',
+                ),
+            ],
+          ),
+          // Media preview
+          if (_selectedMedia != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              height: 150,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey[400]!),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: _mediaType == 'image'
+                    ? (PlatformDetector.isWeb || PlatformDetector.isPWA
+                        ? FutureBuilder<Uint8List>(
+                            future: _selectedMedia!.readAsBytes(),
+                            builder: (context, snapshot) {
+                              if (snapshot.hasData) {
+                                final bytes = snapshot.data!;
+                                // Use Image.memory with proper error handling
+                                return Image.memory(
+                                  bytes,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    print('Image preview error: $error');
+                                    // If image decoding fails, show a nice placeholder
+                                    return Container(
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            Colors.blue[100]!,
+                                            Colors.blue[200]!,
+                                          ],
+                                        ),
+                                      ),
+                                      child: const Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.image, size: 64, color: Colors.white),
+                                          SizedBox(height: 8),
+                                          Text(
+                                            'Image Selected',
+                                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                );
+                              }
+                              return const Center(child: CircularProgressIndicator());
+                            },
+                          )
+                        : Image.file(
+                            File(_selectedMedia!.path),
+                            fit: BoxFit.cover,
+                          ))
+                            : ((PlatformDetector.isWeb || PlatformDetector.isPWA)
+                                ? Container(
+                                    // For web/PWA, show play icon since we can't extract thumbnail from video file
+                                    color: Colors.black45,
+                            child: const Center(
+                              child: Icon(Icons.play_circle_outline, size: 100, color: Colors.white),
+                            ),
+                          )
+                        : FutureBuilder<String>(
+                            future: Future.value(_selectedMedia!.path),
+                            builder: (context, snapshot) {
+                              if (snapshot.hasData) {
+                                return Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    Image.file(
+                                      File(_selectedMedia!.path),
+                                      fit: BoxFit.cover,
+                                    ),
+                                    const Icon(Icons.play_circle_outline,
+                                        size: 64, color: Colors.white),
+                                  ],
+                                );
+                              }
+                              return const Center(child: CircularProgressIndicator());
+                            },
+                          )),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           _isLoading
-              ? const CircularProgressIndicator()
+              ? (_isUploading 
+                  ? const Column(
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 8),
+                        Text('Uploading media...'),
+                      ],
+                    )
+                  : const CircularProgressIndicator())
               : SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -1617,6 +2335,54 @@ class _PostScreenState extends State<PostScreen> {
                           fontSize: 16,
                         ),
                       ),
+                      // Display media if present
+                      if (post.imageUrl != null && post.mediaType == 'image') ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          constraints: const BoxConstraints(maxHeight: 400),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey[300]!),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.network(
+                              post.imageUrl!,
+                              fit: BoxFit.contain,
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return const Center(
+                                  child: CircularProgressIndicator(),
+                                );
+                              },
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  height: 200,
+                                  color: Colors.grey[200],
+                                  child: const Icon(Icons.error, size: 50),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                      if (post.videoUrl != null && post.mediaType == 'video') ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          constraints: const BoxConstraints(maxHeight: 400),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey[300]!),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: LazyVideoPlayer(
+                              videoUrl: post.videoUrl!,
+                              thumbnailUrl: post.thumbnailUrl,
+                            ),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 8),
                       Row(
                         children: [
@@ -1766,5 +2532,750 @@ class _PostScreenState extends State<PostScreen> {
       return DateFormat('MMM d, y').format(timestamp);
     }
   }
+}
 
-} 
+// Video player widget for posts
+class PostVideoPlayer extends StatefulWidget {
+  final String videoUrl;
+
+  const PostVideoPlayer({
+    super.key,
+    required this.videoUrl,
+  });
+
+  @override
+  State<PostVideoPlayer> createState() => _PostVideoPlayerState();
+}
+
+class _PostVideoPlayerState extends State<PostVideoPlayer> {
+  VideoPlayerController? _controller;
+  bool _isInitialized = false;
+  bool _isPlaying = false;
+  bool _hasError = false;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeVideo();
+  }
+
+  Future<void> _initializeVideo() async {
+    try {
+      print('📹 Initializing video player for: ${widget.videoUrl}');
+      
+      if (PlatformDetector.isWeb || PlatformDetector.isPWA) {
+        // On web/PWA, use basic HTML5 video player instead of video_player
+        setState(() {
+          _isInitialized = true;
+          _hasError = true;
+          _errorMessage = 'Web video playback requires HTML5 video element';
+        });
+        return;
+      }
+      
+      _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
+      
+      // Add error listener
+      _controller!.addListener(_videoListener);
+      
+      await _controller!.initialize();
+      
+      if (mounted && !_hasError) {
+        setState(() {
+          _isInitialized = true;
+        });
+        print('📹 Video initialized successfully');
+      }
+    } catch (e) {
+      print('📹 Error initializing video: $e');
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = e.toString();
+        });
+      }
+    }
+  }
+
+  void _videoListener() {
+    if (_controller == null) return;
+    
+    // Check for errors
+    if (_controller!.value.hasError) {
+      print('📹 Video player error: ${_controller!.value.errorDescription}');
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = _controller!.value.errorDescription;
+        });
+      }
+    }
+    
+    // Update playing state
+    if (mounted) {
+      setState(() {
+        _isPlaying = _controller!.value.isPlaying;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.removeListener(_videoListener);
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  void _togglePlayPause() {
+    if (_controller == null || _hasError) return;
+    
+    setState(() {
+      if (_controller!.value.isPlaying) {
+        _controller!.pause();
+        _isPlaying = false;
+      } else {
+        _controller!.play();
+        _isPlaying = true;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_hasError) {
+      return Container(
+        height: 200,
+        color: Colors.grey[200],
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: Colors.red),
+            const SizedBox(height: 8),
+            const Text(
+              'Video playback error',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            if (_errorMessage != null)
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Text(
+                  _errorMessage!,
+                  style: const TextStyle(fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            const SizedBox(height: 8),
+            ElevatedButton(
+              onPressed: _initializeVideo,
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (!_isInitialized) {
+      return Container(
+        height: 200,
+        color: Colors.grey[200],
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (PlatformDetector.isWeb || PlatformDetector.isPWA) {
+      // For web/PWA, use HTML video element (basic implementation)
+      return Container(
+        height: 200,
+        color: Colors.black87,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.video_file, size: 64, color: Colors.white),
+            const SizedBox(height: 16),
+            const Text(
+              'Video available',
+              style: TextStyle(color: Colors.white, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () {
+                // Open video in new tab
+                if (mounted) {
+                  // For now, just show a message
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Video: ${widget.videoUrl}'),
+                      duration: const Duration(seconds: 5),
+                    ),
+                  );
+                }
+              },
+              child: const Text('View Video', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_controller == null) {
+      return Container(
+        height: 200,
+        color: Colors.grey[200],
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    return GestureDetector(
+      onTap: _togglePlayPause,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          AspectRatio(
+            aspectRatio: _controller!.value.aspectRatio,
+            child: VideoPlayer(_controller!),
+          ),
+          if (!_isPlaying)
+            Container(
+              decoration: const BoxDecoration(
+                color: Colors.black38,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.play_circle_filled,
+                size: 64,
+                color: Colors.white,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Web-specific video player element
+/// Uses HTML video element for inline playback
+class _WebVideoPlayerElement extends StatefulWidget {
+  final String videoUrl;
+
+  const _WebVideoPlayerElement({
+    required this.videoUrl,
+  });
+
+  @override
+  State<_WebVideoPlayerElement> createState() => _WebVideoPlayerElementState();
+}
+
+class _WebVideoPlayerElementState extends State<_WebVideoPlayerElement> {
+  late String _viewId;
+
+  @override
+  void initState() {
+    super.initState();
+    _viewId = 'video-player-${widget.videoUrl.hashCode}';
+    _registerViewFactory();
+  }
+
+  void _registerViewFactory() {
+    if (kIsWeb) {
+      // Register HTML video element factory for inline playback
+      ui.platformViewRegistry.registerViewFactory(
+        _viewId,
+        (int viewId) {
+          // Create HTML video element
+          final htmlVideoElement = html.VideoElement()
+            ..src = widget.videoUrl
+            ..controls = true
+            ..autoplay = false
+            ..style.width = '100%'
+            ..style.height = '100%'
+            ..style.objectFit = 'contain';
+          
+          // Add styling
+          htmlVideoElement.style.backgroundColor = '#000000';
+          
+          return htmlVideoElement;
+        },
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Return the platform view that renders the HTML video element
+    return Container(
+      color: Colors.black,
+      child: SizedBox(
+        width: double.infinity,
+        height: 400,
+        child: HtmlElementView(viewType: _viewId),
+      ),
+    );
+  }
+}
+
+class _InlineVideoModal extends StatelessWidget {
+  final String videoUrl;
+
+  const _InlineVideoModal({required this.videoUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.8,
+      decoration: const BoxDecoration(
+        color: Colors.black,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Playing Video',
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+          ),
+          // Video player area
+          Expanded(
+            child: Container(
+              color: Colors.black87,
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.videocam, size: 80, color: Colors.white70),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Video Player',
+                      style: TextStyle(color: Colors.white, fontSize: 18),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      child: SelectableText(
+                        videoUrl,
+                        style: const TextStyle(color: Colors.white70, fontSize: 12),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        // Open video in browser as fallback
+                        try {
+                          final uri = Uri.parse(videoUrl);
+                          if (await url_launcher.canLaunchUrl(uri)) {
+                            await url_launcher.launchUrl(uri);
+                          }
+                        } catch (e) {
+                          print('Error opening video: $e');
+                        }
+                      },
+                      icon: const Icon(Icons.open_in_browser),
+                      label: const Text('Open in Browser'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.brown[700],
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+// Lazy loading video player - shows thumbnail first, loads video only when user plays
+class LazyVideoPlayer extends StatefulWidget {
+  final String videoUrl;
+  final String? thumbnailUrl;
+
+  const LazyVideoPlayer({
+    super.key,
+    required this.videoUrl,
+    this.thumbnailUrl,
+  });
+
+  @override
+  State<LazyVideoPlayer> createState() => _LazyVideoPlayerState();
+}
+
+class _LazyVideoPlayerState extends State<LazyVideoPlayer> {
+  VideoPlayerController? _controller;
+  bool _isInitialized = false;
+  bool _isPlaying = false;
+  bool _hasError = false;
+  String? _errorMessage;
+  bool _shouldLoadVideo = false; // Only load video when user taps
+
+  @override
+  void initState() {
+    super.initState();
+    // Don't initialize video yet - wait for user to tap
+  }
+
+  void _handleWebVideoTap() {
+    // For web, toggle between thumbnail and video player
+    if (!_shouldLoadVideo) {
+      _initializeVideo();
+    }
+  }
+
+  Future<void> _initializeVideo() async {
+    if (_controller != null || _shouldLoadVideo) return;
+    
+    _shouldLoadVideo = true;
+    
+    try {
+      print('📹 Lazy loading video player for: ${widget.videoUrl}');
+      
+      if (PlatformDetector.isWeb || PlatformDetector.isPWA) {
+        // On web/PWA, we can't use video_player, just show that video is ready
+        setState(() {
+          _isInitialized = true;
+          _hasError = false;
+        });
+        print('📹 Video ready for playback (web)');
+        return;
+      }
+      
+      _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
+      
+      // Add error listener
+      _controller!.addListener(_videoListener);
+      
+      await _controller!.initialize();
+      
+        if (mounted && !_hasError) {
+          setState(() {
+            _isInitialized = true;
+          });
+          print('📹 Video loaded successfully (lazy load)');
+          
+          // For web, don't auto-play, user will tap to play
+          if (!PlatformDetector.isWeb && !PlatformDetector.isPWA) {
+            // Auto-play when loaded only on mobile
+            _controller!.play();
+            setState(() {
+              _isPlaying = true;
+            });
+          }
+        }
+    } catch (e) {
+      print('📹 Error initializing video: $e');
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = e.toString();
+        });
+      }
+    }
+  }
+
+  void _videoListener() {
+    if (_controller == null) return;
+    
+    // Check for errors
+    if (_controller!.value.hasError) {
+      print('📹 Video player error: ${_controller!.value.errorDescription}');
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = _controller!.value.errorDescription;
+        });
+      }
+    }
+    
+    // Update playing state
+    if (mounted) {
+      setState(() {
+        _isPlaying = _controller!.value.isPlaying;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.removeListener(_videoListener);
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  void _togglePlayPause() {
+    if (!_shouldLoadVideo) {
+      // First tap - load the video
+      _initializeVideo();
+      return;
+    }
+    
+    if (_controller == null || _hasError) return;
+    
+    setState(() {
+      if (_controller!.value.isPlaying) {
+        _controller!.pause();
+        _isPlaying = false;
+      } else {
+        _controller!.play();
+        _isPlaying = true;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Show thumbnail until user taps to play
+    if (!_shouldLoadVideo) {
+      return GestureDetector(
+        onTap: _togglePlayPause,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // Show thumbnail if available, otherwise show placeholder
+            if (widget.thumbnailUrl != null)
+              Image.network(
+                widget.thumbnailUrl!,
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return Container(
+                    height: 200,
+                    color: Colors.grey[200],
+                    child: const Center(child: CircularProgressIndicator()),
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(
+                    height: 200,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Colors.brown[700]!, Colors.brown[900]!],
+                      ),
+                    ),
+                    child: const Center(child: Icon(Icons.videocam, size: 64, color: Colors.white70)),
+                  );
+                },
+              )
+            else
+              Container(
+                height: 200,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.brown[700]!, Colors.brown[900]!],
+                  ),
+                ),
+                child: const Center(child: Icon(Icons.videocam, size: 64, color: Colors.white70)),
+              ),
+            // Play button overlay
+            Container(
+              decoration: const BoxDecoration(
+                color: Colors.black54,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.play_circle_filled,
+                size: 72,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_hasError) {
+      return GestureDetector(
+        onTap: _togglePlayPause,
+        child: Container(
+          height: 200,
+          color: Colors.grey[200],
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: Colors.red),
+              const SizedBox(height: 8),
+              const Text(
+                'Video playback error',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              if (_errorMessage != null)
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Text(
+                    _errorMessage!,
+                    style: const TextStyle(fontSize: 12),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              const SizedBox(height: 8),
+              ElevatedButton(
+                onPressed: _initializeVideo,
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (!_isInitialized) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    // Handle web/PWA playback - show inline video player
+    if (PlatformDetector.isWeb || PlatformDetector.isPWA) {
+      // If video is loaded, show the HTML video player
+      if (_shouldLoadVideo && _isInitialized) {
+        return Container(
+          height: 400,
+          constraints: const BoxConstraints(minHeight: 300, maxHeight: 500),
+          decoration: BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: _WebVideoPlayerElement(videoUrl: widget.videoUrl),
+          ),
+        );
+      }
+      
+      // Show thumbnail with play button
+      return GestureDetector(
+        onTap: _handleWebVideoTap,
+        child: Container(
+          height: 400,
+          constraints: const BoxConstraints(minHeight: 300, maxHeight: 500),
+          decoration: BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Show thumbnail if available
+              if (widget.thumbnailUrl != null)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    widget.thumbnailUrl!,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return const Center(child: CircularProgressIndicator());
+                    },
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        color: Colors.grey[900],
+                        child: const Center(
+                          child: Icon(Icons.videocam, size: 80, color: Colors.white70),
+                        ),
+                      );
+                    },
+                  ),
+                )
+              else
+                Container(
+                  color: Colors.grey[900],
+                  child: const Center(
+                    child: Icon(Icons.videocam, size: 80, color: Colors.white70),
+                  ),
+                ),
+              // Play button overlay
+              Center(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    shape: BoxShape.circle,
+                  ),
+                  padding: const EdgeInsets.all(8),
+                  child: const Icon(
+                    Icons.play_circle_filled,
+                    size: 80,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              // Control bar at bottom
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  height: 60,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        Colors.black.withOpacity(0.9),
+                      ],
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.play_circle_outline, color: Colors.white, size: 32),
+                      const SizedBox(width: 12),
+                      const Text(
+                        'Tap to play video',
+                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_controller == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    return GestureDetector(
+      onTap: _togglePlayPause,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          AspectRatio(
+            aspectRatio: _controller!.value.aspectRatio,
+            child: VideoPlayer(_controller!),
+          ),
+          if (!_isPlaying)
+            Container(
+              decoration: const BoxDecoration(
+                color: Colors.black38,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.play_circle_filled,
+                size: 64,
+                color: Colors.white,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+}
