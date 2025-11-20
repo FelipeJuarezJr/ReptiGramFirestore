@@ -1989,7 +1989,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         Text(
           count.toString(),
           style: const TextStyle(
-            color: Colors.white,
+            color: Colors.grey,
             fontSize: 18,
             fontWeight: FontWeight.bold,
           ),
